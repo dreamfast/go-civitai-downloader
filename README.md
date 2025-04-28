@@ -12,6 +12,8 @@
 8. Start the pod and watch the logs until it has finished downloading your content
 9. Connect to your pod and download the files to your PC
 
+![](civitai-1.png)
+![](civitai-2.png)
 ![](runpod-1.png)
 ![](runpod-2.png)
 
