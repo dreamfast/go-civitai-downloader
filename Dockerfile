@@ -1,5 +1,5 @@
 # Use an official Golang image for building
-FROM golang:1.24 AS builder
+FROM golang:1.24-bullseye AS builder
 
 # Build the civitai-downloader
 RUN git clone https://github.com/dreamfast/go-civitai-downloader.git /src \
