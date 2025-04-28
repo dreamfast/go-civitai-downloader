@@ -244,6 +244,7 @@ type (
 
 	// Internal file db entry for each model
 	DatabaseEntry struct {
+		ModelID      int          `json:"modelId"`
 		ModelName    string       `json:"modelName"`
 		ModelType    string       `json:"modelType"`
 		Version      ModelVersion `json:"version"`

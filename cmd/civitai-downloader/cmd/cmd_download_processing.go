@@ -176,8 +176,13 @@ func processPage(db *database.DB, pageDownloads []potentialDownload, cfg *models
 					entry.Status = models.StatusPending
 					entry.ErrorDetails = ""
 					// Update other fields that might change
-					entry.Folder = pd.Slug
-					entry.Version = pd.CleanedVersion
+					// --- Calculate correct folder path (type/model) --- NEW
+					modelTypeNameSlug := helpers.ConvertToSlug(pd.ModelType)
+					modelNameSlug := pd.Slug // pd.Slug should already be the model name slug
+					folderPathPart := filepath.Join(modelTypeNameSlug, modelNameSlug)
+					// --- End Calculation ---
+					entry.Folder = folderPathPart
+					entry.Version = pd.FullVersion
 					entry.File = pd.File
 					// Update DB entry to reflect Pending status
 					entryBytes, marshalErr := json.Marshal(entry)
@@ -193,9 +198,14 @@ func processPage(db *database.DB, pageDownloads []potentialDownload, cfg *models
 					// File *does* exist, proceed with original skip logic + metadata check
 					log.Infof("Skipping %s (VersionID: %d, Key: %s) - File exists and DB status is Downloaded.", pd.TargetFilepath, pd.CleanedVersion.ID, dbKey)
 					// Update fields that might change between runs
-					entry.Folder = pd.Slug
-					entry.Version = pd.CleanedVersion // Update associated metadata version
-					entry.File = pd.File              // Update file details (URL might change)
+					// --- Calculate correct folder path (type/model) --- NEW
+					modelTypeNameSlug := helpers.ConvertToSlug(pd.ModelType)
+					modelNameSlug := pd.Slug // pd.Slug should already be the model name slug
+					folderPathPart := filepath.Join(modelTypeNameSlug, modelNameSlug)
+					// --- End Calculation ---
+					entry.Folder = folderPathPart
+					entry.Version = pd.FullVersion
+					entry.File = pd.File // Update file details (URL might change)
 
 					// --- START: Save Metadata Check for Existing Download ---
 					// Check if metadata saving is enabled from the config
@@ -242,8 +252,13 @@ func processPage(db *database.DB, pageDownloads []potentialDownload, cfg *models
 				entry.Status = models.StatusPending
 				entry.ErrorDetails = ""
 				// Update fields that might change
-				entry.Folder = pd.Slug
-				entry.Version = pd.CleanedVersion
+				// --- Calculate correct folder path (type/model) --- NEW
+				modelTypeNameSlug := helpers.ConvertToSlug(pd.ModelType)
+				modelNameSlug := pd.Slug // pd.Slug should already be the model name slug
+				folderPathPart := filepath.Join(modelTypeNameSlug, modelNameSlug)
+				// --- End Calculation ---
+				entry.Folder = folderPathPart  // UPDATED
+				entry.Version = pd.FullVersion // FIXED: Use FullVersion
 				entry.File = pd.File
 				// entry.Timestamp = time.Now().Unix() // Optionally update timestamp?
 

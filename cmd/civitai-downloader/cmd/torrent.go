@@ -300,11 +300,11 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 					Overwrite:      overwriteTorrentsEffective,   // Use viper value
 					GenerateMagnet: generateMagnetLinksEffective, // Use viper value
 					LogFields: log.Fields{ // Context for the model directory
-						"modelID":   entry.Version.ModelId,
+						"modelID":   entry.ModelID,
 						"modelName": entry.ModelName, // Use ModelName from entry
 						"directory": modelDir,
 					},
-					ModelID:    entry.Version.ModelId,
+					ModelID:    entry.ModelID,
 					ModelName:  entry.ModelName,
 					ModelType:  modelType, // Store the determined model type
 					BleveIndex: bleveIndex,

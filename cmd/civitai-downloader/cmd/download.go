@@ -326,65 +326,72 @@ func confirmDownload(downloadsToQueue []potentialDownload, cfg *models.Config) b
 	}
 }
 
-// confirmParameters displays the effective configuration and prompts if needed.
-// It now receives the globalConfig.
+// confirmParameters prints the effective settings and asks for user confirmation.
+// Uses globalConfig which should be populated.
 func confirmParameters(cmd *cobra.Command, cfg *models.Config, queryParams models.QueryParameters) bool {
-
-	// --show-config flag handling
-	showConfigFlag, _ := cmd.Flags().GetBool("show-config")
-	if showConfigFlag {
-		fmt.Println("--- Effective Global Config Settings --- ")
-		globalJSON, _ := json.MarshalIndent(cfg, "", "  ") // Use the loaded globalConfig
-		fmt.Println(string(globalJSON))
-
-		fmt.Println("\n--- Query Parameters for API --- ")
-		apiJSON, _ := json.MarshalIndent(queryParams, "", "  ")
-		fmt.Println(string(apiJSON))
-		return false // Indicate to exit after showing config
-	}
-
-	// Skip confirmation if --yes flag is set via config
-	if cfg.Download.SkipConfirmation {
-		log.Info("Skipping parameter confirmation due to --yes flag or config setting.")
-		return true // Continue
-	}
-
-	// Display parameters for confirmation
-	fmt.Println("--- Current Settings --- ")
-	settings := map[string]interface{}{
-		"SavePath":       cfg.SavePath,
-		"DatabasePath":   cfg.DatabasePath,
-		"BleveIndexPath": cfg.BleveIndexPath,
-
-		"DownloadAllVersions": cfg.Download.AllVersions,
-		"ModelVersionID":      cfg.Download.ModelVersionID,
-		"ModelID":             cfg.Download.ModelID,
-
-		"PrimaryOnly":           cfg.Download.PrimaryOnly,
-		"Pruned":                cfg.Download.Pruned,
+	fmt.Println("--- Current Settings ---")
+	settingsSummary := map[string]interface{}{
+		"ApiClientTimeoutSec":   cfg.APIClientTimeoutSec,
+		"ApiDelayMs":            cfg.APIDelayMs,
+		"ApiKeySet":             cfg.APIKey != "",
+		"BleveIndexPath":        cfg.BleveIndexPath,
+		"Concurrency":           cfg.Download.Concurrency,
+		"DatabasePath":          cfg.DatabasePath,
+		"DownloadAllVersions":   cfg.Download.AllVersions,
 		"Fp16":                  cfg.Download.Fp16,
 		"IgnoreBaseModels":      cfg.Download.IgnoreBaseModels,
 		"IgnoreFileNameStrings": cfg.Download.IgnoreFileNameStrings,
-
-		"Concurrency":         cfg.Download.Concurrency,
-		"SaveMetadata":        cfg.Download.SaveMetadata,
-		"DownloadMetaOnly":    cfg.Download.DownloadMetaOnly,
-		"SaveModelInfo":       cfg.Download.SaveModelInfo,
-		"SaveVersionImages":   cfg.Download.SaveVersionImages,
-		"SaveModelImages":     cfg.Download.SaveModelImages,
-		"SkipConfirmation":    cfg.Download.SkipConfirmation,
-		"ApiDelayMs":          cfg.APIDelayMs,
-		"ApiClientTimeoutSec": cfg.APIClientTimeoutSec,
-		"ApiKeySet":           cfg.APIKey != "",
-		"LogApiRequests":      cfg.LogApiRequests,
+		"LogApiRequests":        cfg.LogApiRequests,
+		"MaxPages":              cfg.Download.MaxPages,
+		"ModelID":               cfg.Download.ModelID,
+		"ModelVersionID":        cfg.Download.ModelVersionID,
+		"Nsfw":                  cfg.Download.Nsfw,
+		"PrimaryOnly":           cfg.Download.PrimaryOnly,
+		"Pruned":                cfg.Download.Pruned,
+		"SaveMetadata":          cfg.Download.SaveMetadata,
+		"SaveModelImages":       cfg.Download.SaveModelImages,
+		"SaveModelInfo":         cfg.Download.SaveModelInfo,
+		"SavePath":              cfg.SavePath,
+		"SaveVersionImages":     cfg.Download.SaveVersionImages,
+		"SkipConfirmation":      cfg.Download.SkipConfirmation,
 	}
-	settingsJSON, _ := json.MarshalIndent(settings, "", "  ")
+
+	settingsJSON, _ := json.MarshalIndent(settingsSummary, "", "  ")
 	fmt.Println(string(settingsJSON))
 
-	fmt.Println("\n--- Query Parameters for API --- ")
-	apiJSON, _ := json.MarshalIndent(queryParams, "", "  ")
-	fmt.Println(string(apiJSON))
-	fmt.Println("----------------------")
+	// --- NEW: Explicitly state the Total Download Limit ---
+	fmt.Println("--- Total Download Limit (Application) ---")
+	if cfg.Download.Limit <= 0 {
+		fmt.Println("Limit: Unlimited (0)")
+	} else {
+		fmt.Printf("Limit: %d\n", cfg.Download.Limit)
+	}
+	// --- END NEW ---
+
+	fmt.Println("\n--- Query Parameters for API (Page size defaults to API) ---")
+	// Create a temporary map to display query params, letting API default the page size
+	displayQueryParams := map[string]interface{}{
+		"page":                  queryParams.Page,
+		"query":                 queryParams.Query,
+		"username":              queryParams.Username,
+		"tag":                   queryParams.Tag,
+		"types":                 queryParams.Types,
+		"baseModels":            queryParams.BaseModels,
+		"sort":                  queryParams.Sort,
+		"period":                queryParams.Period,
+		"primaryFileOnly":       queryParams.PrimaryFileOnly,
+		"allowNoCredit":         queryParams.AllowNoCredit,
+		"allowDerivatives":      queryParams.AllowDerivatives,
+		"allowDifferentLicense": queryParams.AllowDifferentLicenses,
+		"allowCommercialUse":    queryParams.AllowCommercialUse,
+		"nsfw":                  queryParams.Nsfw,
+	}
+	queryJSON, _ := json.MarshalIndent(displayQueryParams, "", "  ")
+	fmt.Println(string(queryJSON))
+
+	if cfg.Download.SkipConfirmation {
+		return true
+	}
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -447,32 +454,6 @@ func executeDownloads(downloadsToQueue []potentialDownload, db *database.DB, fil
 	close(jobQueue) // Signal workers that no more jobs are coming
 	log.Debug("Finished queueing jobs.")
 
-	// --- Progress Display Handling (Simplified) ---
-	// The worker itself now handles updating the uilive.Writer.
-	// We just need to wait for the workers to finish.
-
-	// Remove the separate progress display goroutine
-	/*
-		completedCount := 0
-		var displayWg sync.WaitGroup
-		displayWg.Add(1)
-		go func() {
-			defer displayWg.Done()
-			for completedCount < totalCount {
-				select {
-				case update := <-statusUpdates:
-					log.Tracef("Status Update: %s", update)
-				case result := <-results:
-					completedCount++
-					log.Tracef("Result received: %s (%d/%d)", result, completedCount, totalCount)
-				}
-				progressLine := fmt.Sprintf("Progress: %d / %d files completed.", completedCount, totalCount)
-				fmt.Fprintln(writer, progressLine)
-				writer.Flush()
-			}
-		}()
-	*/
-
 	wg.Wait() // Wait for all download workers to finish
 	// Close unnecessary channels
 	// close(statusUpdates)
@@ -509,6 +490,16 @@ func runDownload(cmd *cobra.Command, args []string) error {
 
 	// --- Update config based on flags specific to this run (like concurrency override) ---
 	updateConcurrency(cmd, &cfg)
+
+	// --- NEW: Update Limit based on flag --- START ---
+	if cmd.Flags().Changed("limit") {
+		limitVal, _ := cmd.Flags().GetInt("limit")
+		// Update the config struct with the value from the flag.
+		// If user explicitly sets -l 0, it means 0 (unlimited), overriding config.
+		log.Infof("Overriding download limit with flag value: %d (0 means unlimited)", limitVal)
+		cfg.Download.Limit = limitVal
+	}
+	// --- NEW: Update Limit based on flag --- END ---
 
 	// --- Shared HTTP Client using global transport ---
 	// Create once here for potential reuse by API client and downloaders

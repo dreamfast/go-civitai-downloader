@@ -447,9 +447,16 @@ func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
 	// --- 4. Derive Default Paths if Empty ---
 	if finalCfg.DatabasePath == "" {
 		finalCfg.DatabasePath = filepath.Join(finalCfg.SavePath, "civitai.db")
+		log.Debugf("[Config Init] DatabasePath defaulted to: %s", finalCfg.DatabasePath)
 	}
-	// Handle default Bleve path if necessary (could also be command specific)
-	// if finalCfg.BleveIndexPath == "" { ... }
+	if finalCfg.BleveIndexPath == "" {
+		finalCfg.BleveIndexPath = filepath.Join(finalCfg.SavePath, "civitai.bleve")
+		log.Debugf("[Config Init] BleveIndexPath defaulted to: %s (SavePath was: '%s')", finalCfg.BleveIndexPath, finalCfg.SavePath)
+	}
+
+	// --- ADDED: Explicit Debug for Final Path --- START
+	log.Debugf("[Config Init] FINAL BleveIndexPath just before return: '%s'", finalCfg.BleveIndexPath)
+	// --- ADDED: Explicit Debug for Final Path --- END
 
 	// --- 5. Validation ---
 	if finalCfg.SavePath == "" {

@@ -8,6 +8,7 @@ import (
 	"hash/crc32"
 	"io"
 	"math"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -249,24 +250,21 @@ func calculateHash(filePath string, hashAlgo hash.Hash) (string, error) {
 	return hex.EncodeToString(hashAlgo.Sum(nil)), nil
 }
 
-// -- MIME Type to Extension Mapping --
-
-// Define a map for common MIME types to their preferred extensions
-var mimeTypeToExtensionMap = map[string]string{
-	"image/jpeg": ".jpg", // Covers jpg and jpeg
-	"video/mp4":  ".mp4",
-	"image/webp": ".webp", // Common for animated webp, though technically video/webp exists
-	// Add more mappings as needed
-}
-
-// GetExtensionFromMimeType attempts to return a standard file extension for a given MIME type.
-// It considers the primary type (e.g., "image/png") and ignores parameters (like charset).
-// Returns the extension (including the dot) and true if found, otherwise empty string and false.
+// GetExtensionFromMimeType returns the standard file extension for a given MIME type.
+// It returns the extension (including the dot) and true if found, otherwise empty string and false.
 func GetExtensionFromMimeType(mimeType string) (string, bool) {
-	// MIME types can have parameters like "text/plain; charset=utf-8"
-	// We only care about the main type.
-	mainMimeType := strings.Split(mimeType, ";")[0]
-	ext, ok := mimeTypeToExtensionMap[strings.ToLower(mainMimeType)]
+	// Handle potential parameters in the MIME type (e.g., "text/plain; charset=utf-8")
+	baseMimeType, _, _ := mime.ParseMediaType(mimeType)
+
+	// Common MIME types and their standard extensions
+	mimeExtensionMap := map[string]string{
+		"image/jpeg": ".jpg",
+		"image/webp": ".webp",
+		"image/png":  ".png",
+		"video/mp4":  ".mp4",
+	}
+
+	ext, ok := mimeExtensionMap[baseMimeType]
 	return ext, ok
 }
 

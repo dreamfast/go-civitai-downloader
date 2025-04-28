@@ -18,7 +18,7 @@ DatabasePath = "civitai.db"
 
 # Path to the Bleve search index directory. Used by the 'search' command.
 # If empty, defaults to "[SavePath]/civitai.bleve".
-BleveIndexPath = "civitai.bleve"
+BleveIndexPath = ""
 
 # Delay in milliseconds between consecutive API calls (helps avoid rate limiting).
 ApiDelayMs = 200
@@ -68,7 +68,7 @@ Nsfw = true
 # Download ONLY a specific model version ID, ignoring other filters (0 means disabled). Corresponds to --model-version-id flag.
 # ModelVersionID = 67890
 # Download all versions of matched models, not just the latest one. Corresponds to --all-versions flag.
-AllVersions = false
+AllVersions = true
 
 # --- Filtering - File Level ---
 # Only download files marked as "Primary" by the uploader. Corresponds to --primary-only flag.
@@ -85,9 +85,8 @@ IgnoreFileNameStrings = []
 Sort = "Most Downloaded"
 # Time period for sorting ("AllTime", "Year", "Month", "Week", "Day"). Corresponds to --period flag.
 Period = "AllTime"
-# Maximum number of models to request per API page (max 100). Affects how many results are processed per API call. Corresponds to -l flag (used for API call limit).
-# Limit also acts as the TOTAL download limit if smaller than results found within MaxPages.
-Limit = 100
+# Limit the TOTAL download limit
+Limit = 0
 # Maximum number of API pages to fetch (0 for no limit). Corresponds to -p flag.
 MaxPages = 0
 
@@ -97,9 +96,9 @@ Concurrency = 4
 # Save a .json file containing model version metadata alongside each downloaded file. Corresponds to --metadata flag.
 SaveMetadata = true # Corresponds to --metadata flag.
 # Save a full model info JSON (including all versions) to '[SavePath]/[Type]/[ModelSlug]/'. Corresponds to --model-info flag.
-ModelInfo = false # Default is false. TOML key is "ModelInfo".
+ModelInfo = true # Default is true. TOML key is "ModelInfo".
 # Download preview images associated with the specific downloaded model version. Saves to '[SavePath]/[Type]/[ModelSlug]/[VersionID]/images/'. Corresponds to --version-images flag.
-VersionImages = false # Default is false. TOML key is "VersionImages".
+VersionImages = true # Default is true. TOML key is "VersionImages".
 # When SaveModelInfo is true, also download all images for *all* versions of the model. Saves to '[SavePath]/[Type]/[ModelSlug]/images/'. Corresponds to --model-images flag.
 ModelImages = false # Default is false. TOML key is "ModelImages".
 # Only download and save metadata/image files, skip actual model file download. Corresponds to --meta-only flag.

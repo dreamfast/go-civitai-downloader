@@ -209,32 +209,6 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 	log.Infof("Successfully fetched details for version %d (%s) of model %s (%s)",
 		versionResponse.ID, versionResponse.Name, versionResponse.Model.Name, versionResponse.Model.Type)
 
-	// --- Save Model Info if requested --- START ---
-	if cfg.Download.SaveModelInfo {
-		modelID := versionResponse.ModelId
-		if modelID > 0 {
-			log.Debugf("SaveModelInfo enabled. Fetching full details for parent model ID: %d", modelID)
-			fullModelDetails, detailErr := apiClient.GetModelDetails(modelID)
-			if detailErr != nil {
-				log.WithError(detailErr).Warnf("Failed to fetch full model details for ID %d. Cannot save model info.", modelID)
-			} else {
-				// Calculate model base directory based on model type and name from version response
-				modelTypeNameSlug := helpers.ConvertToSlug(versionResponse.Model.Type)
-				modelNameSlug := helpers.ConvertToSlug(versionResponse.Model.Name)
-				modelBaseDir := filepath.Join(cfg.SavePath, modelTypeNameSlug, modelNameSlug)
-
-				if infoSaveErr := saveModelInfoFile(fullModelDetails, modelBaseDir); infoSaveErr != nil {
-					log.WithError(infoSaveErr).Warnf("Failed to save model info JSON for model ID %d", modelID)
-				} else {
-					log.Debugf("Successfully saved model info JSON for model ID %d", modelID)
-				}
-			}
-		} else {
-			log.Warnf("Cannot fetch model info: Parent Model ID not found in version response.")
-		}
-	}
-	// --- Save Model Info if requested --- END ---
-
 	var potentialDownloadsPage []potentialDownload
 	versionWithoutFilesImages := versionResponse
 	versionWithoutFilesImages.Files = nil
@@ -246,11 +220,17 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 			continue
 		}
 
-		// Construct the directory path using Model Type, Model Name Slug, and Version ID
+		// Construct the directory path using Model Type, Model Name Slug, and Version ID+Name Slug
 		modelTypeName := helpers.ConvertToSlug(versionResponse.Model.Type)
 		modelNameSlug := helpers.ConvertToSlug(versionResponse.Model.Name)
 		versionIDStr := strconv.Itoa(versionResponse.ID)
-		targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, versionIDStr)
+		versionNameSlug := helpers.ConvertToSlug(versionResponse.Name)
+		versionDirSegment := fmt.Sprintf("%s-%s", versionIDStr, versionNameSlug)
+		baseModelSlug := helpers.ConvertToSlug(versionResponse.BaseModel)
+		if baseModelSlug == "" {
+			baseModelSlug = "unknown_base"
+		}
+		targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, baseModelSlug, versionDirSegment)
 		// Construct filename with version ID prefix (consistent with DB logic)
 		finalBaseFilename := fmt.Sprintf("%d_%s", versionResponse.ID, helpers.ConvertToSlug(file.Name))
 		targetPath := filepath.Join(targetDir, finalBaseFilename)
@@ -320,13 +300,6 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 	// --- Process Model Info & Images if requested ---
 	modelInfoDir := filepath.Join(cfg.SavePath, "model_info", helpers.ConvertToSlug(modelResponse.Type), helpers.ConvertToSlug(modelResponse.Creator.Username), helpers.ConvertToSlug(modelResponse.Name))
 
-	if cfg.Download.SaveModelInfo {
-		err := saveModelInfoFile(modelResponse, modelInfoDir)
-		if err != nil {
-			log.Warnf("Failed to save full model info JSON for model %d: %v", modelResponse.ID, err)
-		}
-	}
-
 	if cfg.Download.SaveModelImages && imageDownloader != nil {
 		log.Warnf("Downloading model images for model %s (ID: %d). This may include images from multiple versions.", modelResponse.Name, modelResponse.ID)
 		// Collect all images from all versions
@@ -367,11 +340,17 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 				continue
 			}
 
-			// Construct the directory path using Model Type, Model Name Slug, and Version ID
+			// Construct the directory path using Model Type, Model Name Slug, and Version ID+Name Slug
 			modelTypeName := helpers.ConvertToSlug(version.Model.Type)
 			modelNameSlug := helpers.ConvertToSlug(version.Model.Name)
 			versionIDStr := strconv.Itoa(version.ID)
-			targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, versionIDStr)
+			versionNameSlug := helpers.ConvertToSlug(version.Name)
+			versionDirSegment := fmt.Sprintf("%s-%s", versionIDStr, versionNameSlug)
+			baseModelSlug := helpers.ConvertToSlug(version.BaseModel)
+			if baseModelSlug == "" {
+				baseModelSlug = "unknown_base"
+			}
+			targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, baseModelSlug, versionDirSegment)
 			// Construct filename with version ID prefix (consistent with DB logic)
 			finalBaseFilename := fmt.Sprintf("%d_%s", version.ID, helpers.ConvertToSlug(file.Name))
 			targetPath := filepath.Join(targetDir, finalBaseFilename)
@@ -448,15 +427,34 @@ func filterAndPrepareDownloads(potentialDownloadsPage []potentialDownload, db *d
 		} else if errors.Is(errGet, database.ErrNotFound) {
 			// Key not found, this is a new download, create Pending entry
 			log.Debugf("      - Key %s not found in DB. Creating Pending entry.", dbKey)
+
+			// --- Calculate correct folder path (type/model) --- NEW
+			modelTypeNameSlug := helpers.ConvertToSlug(pd.ModelType)
+			modelNameSlug := pd.Slug // pd.Slug should already be the model name slug
+			folderPathPart := filepath.Join(modelTypeNameSlug, modelNameSlug)
+			// --- End Calculation ---
+
+			// Prepare the version struct to be saved
+			versionToSave := pd.FullVersion
+			// --- FIX: Ensure ModelId is populated --- START ---
+			// If the ModelId within the version struct is 0 (likely missing from list API response),
+			// use the ModelID obtained from the parent model object.
+			if versionToSave.ModelId == 0 && pd.ModelID != 0 {
+				log.Debugf("      - Populating missing ModelId (%d) in Version struct for DB save (Version ID: %d)", pd.ModelID, versionToSave.ID)
+				versionToSave.ModelId = pd.ModelID
+			}
+			// --- FIX: Ensure ModelId is populated --- END ---
+
 			newEntry := models.DatabaseEntry{
+				ModelID:      pd.ModelID, // NEW: Populate top-level ID
 				ModelName:    pd.ModelName,
 				ModelType:    pd.ModelType,
-				Version:      pd.FullVersion,       // Store the full version struct
+				Version:      versionToSave,        // UPDATED: Use the potentially corrected version struct
 				File:         pd.File,              // Store the file struct
 				Timestamp:    time.Now().Unix(),    // Use Unix timestamp for AddedAt
 				Creator:      pd.Creator,           // Store the creator struct
 				Filename:     pd.FinalBaseFilename, // Use the calculated filename
-				Folder:       pd.Slug,              // Use the calculated folder slug
+				Folder:       folderPathPart,       // UPDATED: Use the calculated folder path
 				Status:       models.StatusPending, // Set initial status
 				ErrorDetails: "",                   // Clear error details
 			}
@@ -570,12 +568,26 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 			return allPotentialDownloads, totalDownloadSize, err // Return whatever was collected so far and the error
 		}
 
+		// Assign the next cursor *before* the early exit check potentially clears it
+		nextCursor = response.Metadata.NextCursor
+
 		log.Debugf("Received %d models for page %d", len(response.Items), pageCount)
 
 		if len(response.Items) == 0 {
 			log.Info("Received 0 models, assuming end of results.")
 			break
 		}
+
+		// --- NEW Check: Early exit for low limit without --all-versions ---
+		// If a limit is set, we are *not* fetching all versions (meaning we care about the top sorted models),
+		// it's the first page, and that page returned results, stop pagination after this page.
+		// This prevents excessive API calls when the user likely only wants the first few relevant models.
+		if userTotalLimit > 0 && !cfg.Download.AllVersions && pageCount == 1 {
+			log.Infof("Limit is %d and --all-versions=false. Processing only the first page of results to respect the limit early.", userTotalLimit)
+			// Force the loop to terminate after this page by clearing the cursor.
+			nextCursor = ""
+		}
+		// --- END NEW Check ---
 
 		var potentialDownloadsPage []potentialDownload
 		for _, model := range response.Items {
@@ -608,14 +620,6 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 			}
 			// --- End Fetch Full Model Details ---
 
-			// --- Save Model Info (if requested and details fetched) ---
-			if cfg.Download.SaveModelInfo && fullModelDetails.ID != 0 {
-				if infoSaveErr := saveModelInfoFile(fullModelDetails, modelBaseDir); infoSaveErr != nil {
-					log.Warnf("Failed to save model info JSON for model %d: %v", model.ID, infoSaveErr)
-				}
-			}
-			// --- End Save Model Info ---
-
 			// --- Download Model Images (if requested and details fetched) ---
 			if cfg.Download.SaveModelImages && fullModelDetails.ID != 0 && imageDownloader != nil {
 				log.Debugf("SaveModelImages enabled for model %d. Collecting images...", model.ID)
@@ -645,7 +649,8 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 			}
 			// --- End Download Model Images ---
 
-			// Process each version of the model (using versions from the initial list response)
+			// Process each version of the model
+			modelReachedLimit := false // Flag to break outer loop
 			for _, version := range model.ModelVersions {
 				// Process each file within the version
 				for _, file := range version.Files {
@@ -653,11 +658,17 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 						continue
 					}
 
-					// Construct the directory path using Model Type, Model Name Slug, and Version ID
+					// Construct the directory path using Model Type, Model Name Slug, and Version ID+Name Slug
 					modelTypeName := helpers.ConvertToSlug(model.Type)
 					modelNameSlug := helpers.ConvertToSlug(model.Name)
 					versionIDStr := strconv.Itoa(version.ID)
-					targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, versionIDStr)
+					versionNameSlug := helpers.ConvertToSlug(version.Name)
+					versionDirSegment := fmt.Sprintf("%s-%s", versionIDStr, versionNameSlug)
+					baseModelSlug := helpers.ConvertToSlug(version.BaseModel)
+					if baseModelSlug == "" {
+						baseModelSlug = "unknown_base"
+					}
+					targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, baseModelSlug, versionDirSegment)
 					// Construct filename with version ID prefix (consistent with DB logic)
 					finalBaseFilename := fmt.Sprintf("%d_%s", version.ID, helpers.ConvertToSlug(file.Name))
 					targetPath := filepath.Join(targetDir, finalBaseFilename)
@@ -685,9 +696,23 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 						Slug:              helpers.ConvertToSlug(modelDataForPd.Name),
 						VersionName:       version.Name,
 					}
+
+					// Check if adding this file would exceed the total limit
+					if userTotalLimit > 0 && len(allPotentialDownloads) >= userTotalLimit {
+						log.Infof("Reached user download limit (%d) while processing model %d. Stopping further processing for this model and page.", userTotalLimit, model.ID)
+						modelReachedLimit = true
+						break // Break inner file loop
+					}
+
+					// Add to list if limit not yet reached
+					// NOTE: This is slightly inefficient as filterAndPrepareDownloads runs later,
+					// but simpler to check here. The final truncation still happens in runDownload.
+					// For now, just track the count.
 					potentialDownloadsPage = append(potentialDownloadsPage, pd)
 				}
-
+				if modelReachedLimit {
+					break // Break version loop
+				}
 				// --- Check if only latest version should be processed --- NEW
 				if !cfg.Download.AllVersions {
 					log.Debugf("Processing only latest version for model %d (%s) as --all-versions is false. Breaking version loop.", model.ID, model.Name)
@@ -695,28 +720,37 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 				}
 				// --- End Check ---
 			}
+			if modelReachedLimit {
+				break // Break model loop for this page
+			}
 		}
 
-		// Filter the page's potential downloads against the DB and prepare them
+		// Filter the collected items for the page
 		processedDownloads, pageDownloadSize := filterAndPrepareDownloads(potentialDownloadsPage, db, cfg)
 		allPotentialDownloads = append(allPotentialDownloads, processedDownloads...)
 		totalDownloadSize += pageDownloadSize
 
-		// --- Check if user limit reached after processing this page --- NEW
+		// --- Check if user limit reached AFTER processing this page ---
 		if userTotalLimit > 0 && len(allPotentialDownloads) >= userTotalLimit {
-			log.Infof("Reached user download limit (%d) during pagination after processing page %d. Stopping model fetch.", userTotalLimit, pageCount)
-			// Optional: Truncate if needed, although the later check handles this too
-			// if len(allPotentialDownloads) > userTotalLimit {
-			//    allPotentialDownloads = allPotentialDownloads[:userTotalLimit]
-			// }
+			log.Infof("Reached user download limit (%d) after processing page %d. Stopping model fetch.", userTotalLimit, pageCount)
 			break // Exit the pagination loop
 		}
 		// --- End Check ---
 
+		// --- NEW SAFETY CHECK for --all-versions + --limit ---
+		// If a limit is set, --all-versions is true, we've fetched more than 1 page,
+		// but still haven't found *any* downloadable files, stop pagination
+		// to prevent potential infinite loops if initial models have no suitable files.
+		if userTotalLimit > 0 && cfg.Download.AllVersions && pageCount > 1 && len(allPotentialDownloads) == 0 {
+			log.Warnf("Fetched %d pages but found 0 downloadable files matching filters while using --limit %d and --all-versions. Stopping pagination to prevent potential infinite loop. Check filters or query if this is unexpected.", pageCount, userTotalLimit)
+			break // Exit the pagination loop
+		}
+		// --- END SAFETY CHECK ---
+
 		// Prepare for next iteration or break
-		nextCursor = response.Metadata.NextCursor
+		// Note: nextCursor might have been cleared by the early exit check above
 		if nextCursor == "" {
-			log.Info("No next cursor returned, stopping model fetch.")
+			log.Info("No next cursor available (or loop forced to stop early), stopping model fetch.")
 			break
 		}
 
@@ -747,11 +781,10 @@ func CreateDownloadQueryParams(cfg *models.Config) models.QueryParameters {
 	}
 
 	params := models.QueryParameters{
-		Limit:           cfg.Download.Limit,
 		Sort:            cfg.Download.Sort,
 		Period:          cfg.Download.Period,
 		Query:           cfg.Download.Query,
-		Username:        username, // Use the derived single username
+		Username:        username,
 		Tag:             cfg.Download.Tag,
 		Types:           cfg.Download.ModelTypes,
 		BaseModels:      cfg.Download.BaseModels,
