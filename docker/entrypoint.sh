@@ -33,7 +33,7 @@ for username in "${USERNAMES[@]}"; do
   echo "Starting download for user: $username"
 
   /usr/bin/civitai-downloader download -u "$username" -c 4 --model-info -y --config /etc/civitai/config.toml
-  /usr/bin/civitai-downloader images -u "$username" -c 4 --save-metadata --config /etc/civitai/config.toml
+  /usr/bin/civitai-downloader images -u "$username" -c 4 --metadata --config /etc/civitai/config.toml
 
 done &
 
