@@ -14,6 +14,8 @@ trap cleanup SIGINT SIGTERM
 
 # Create the output folder
 mkdir -p /workspace/civitai-export 
+chmod -R a+rX /workspace/civitai-export
+# chown -R www-data:www-data /workspace/civitai-export
 
 # Interpolate the config
 envsubst < /etc/civitai/config.template.toml > /etc/civitai/config.toml
@@ -35,6 +37,9 @@ for username in "${USERNAMES[@]}"; do
   /usr/bin/civitai-downloader download -u "$username" -c 4 --model-info -y --config /etc/civitai/config.toml
   /usr/bin/civitai-downloader images -u "$username" -c 4 --metadata --config /etc/civitai/config.toml
 
+  # After downloads: fix ownership and permissions again
+  chmod -R a+rX /workspace/civitai-export
+  # chown -R www-data:www-data /workspace/civitai-export
 done &
 
 DL_PID=$!
