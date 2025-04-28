@@ -25,7 +25,10 @@ nginx -g 'daemon off;' &
 NGINX_PID=$!
 
 # Split usernames by comma
+DEFAULT_BASE_MODELS='SD 1.5,SDXL 1.0,Pony,Flux.1 D,Illustrious,NoobAI,Hunyuan Video,Wan Video'
+
 IFS=',' read -ra USERNAMES <<< "$CIVITAI_USERNAME"
+IFS=',' read -ra BASE_MODELS <<< "${CIVITAI_BASE_MODELS:$DEFAULT_BASE_MODELS}"
 
 # Keep track of background download processes
 DL_PIDS=()
@@ -34,7 +37,10 @@ DL_PIDS=()
 for username in "${USERNAMES[@]}"; do
   echo "Starting download for user: $username"
 
-  /usr/bin/civitai-downloader download -u "$username" -c 4 --model-info -y --config /etc/civitai/config.toml
+  for base_model in "${BASE_MODELS[@]}"; do
+    /usr/bin/civitai-downloader download --base-models "$base_model" -u "$username" -c 4 --model-info -y --config /etc/civitai/config.toml
+  done
+
   /usr/bin/civitai-downloader images -u "$username" -c 4 --metadata --config /etc/civitai/config.toml
 
   # After downloads: fix ownership and permissions again
