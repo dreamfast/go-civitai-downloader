@@ -1,0 +1,84 @@
+ApiKey = "${CIVITAI_API_KEY}"
+
+SavePath = "/workspace/civitai-export"
+
+DatabasePath = "civitai.db"
+
+Sort = "Most Downloaded"
+Period = "AllTime"
+Limit = 100
+Types = [
+    "Checkpoint",
+    "TextualInversion",
+    "Hypernetwork",
+    "AestheticGradient",
+    "LORA",
+    "LoCon",
+    "DoRA",
+    "Controlnet",
+    "Upscaler",
+    "MotionModule",
+    "VAE",
+    "Poses",
+    "Wildcards",
+    "Workflows",
+    "Detection",
+    "Other"
+]
+BaseModels = ['SD 1.4',
+    'SD 1.5',
+    'SD 1.5 LCM',
+    'SD 1.5 Hyper',
+    'SD 2.0',
+    'SD 2.0 768',
+    'SD 2.1',
+    'SD 2.1 768',
+    'SD 2.1 Unclip',
+    'SDXL 0.9',
+    'SDXL 1.0',
+    'SD 3',
+    'SD 3.5',
+    'SD 3.5 Medium',
+    'SD 3.5 Large',
+    'SD 3.5 Large Turbo',
+    'Pony',
+    'Flux.1 S',
+    'Flux.1 D',
+    'AuraFlow',
+    'SDXL 1.0 LCM',
+    'SDXL Distilled',
+    'SDXL Turbo',
+    'SDXL Lightning',
+    'SDXL Hyper',
+    'Stable Cascade',
+    'SVD',
+    'SVD XT',
+    'Playground v2',
+    'PixArt a',
+    'PixArt E',
+    'Hunyuan 1',
+    'Hunyuan Video',
+    'Lumina',
+    'Kolors',
+    'Illustrious',
+    'Mochi',
+    'LTXV',
+    'CogVideoX',
+    'NoobAI',
+    'Wan Video',
+    'HiDream',
+    'Other'
+]
+GetNsfw = true
+
+GetOnlyPrimaryModel = false
+GetPruned = false
+GetFp16 = false
+IgnoreBaseModels = [] # ["1.5", "0.9", "2.0", "2.1", "1.4", "other"]
+IgnoreFileNameStrings = [] # ["alpha", "beta", "inpainting", "preview"]
+
+LogApiRequests = true
+SaveMetadata = true
+ApiDelayMs = 2000
+ApiClientTimeoutSec = 60
+DefaultConcurrency = 2
