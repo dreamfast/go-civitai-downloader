@@ -10,7 +10,9 @@
 6. Enter your API key as `CIVITAI_API_KEY`
 7. Enter your username (or a comma-separated list of usernames) as `CIVITAI_USERNAME`
 8. Start the pod and watch the logs until it has finished downloading your content
-9. Connect to your pod and download the files to your PC, your images will be under `/images/$CIVITAI_USERNAME`
+9. Connect to your pod and download the files to your PC
+    1. Your images will be under `/images/$CIVITAI_USERNAME`
+    2. Everything will be compressed into `/everything.zip`
 10. Stop the pod when you are done downloading files
 
 ![](civitai-1.png)
