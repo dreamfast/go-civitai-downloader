@@ -25,7 +25,7 @@ nginx -g 'daemon off;' &
 NGINX_PID=$!
 
 # Split usernames by comma
-DEFAULT_BASE_MODELS='SD 1.5,SDXL 1.0,Pony,Flux.1 D,Illustrious,NoobAI,Hunyuan Video,Wan Video'
+DEFAULT_BASE_MODELS='SD 1.5,SDXL 1.0,Pony,Flux.1 D,Illustrious,NoobAI,Hunyuan Video,Wan Video,Other'
 
 IFS=',' read -ra USERNAMES <<< "$CIVITAI_USERNAME"
 IFS=',' read -ra BASE_MODELS <<< "${CIVITAI_BASE_MODELS:$DEFAULT_BASE_MODELS}"
