@@ -11,6 +11,7 @@
 7. Enter your username (or a comma-separated list of usernames) as `CIVITAI_USERNAME`
 8. Start the pod and watch the logs until it has finished downloading your content
 9. Connect to your pod and download the files to your PC
+10. Stop the pod when you are done downloading files
 
 ![](civitai-1.png)
 ![](civitai-2.png)
