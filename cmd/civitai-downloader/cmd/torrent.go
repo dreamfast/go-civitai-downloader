@@ -20,6 +20,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	// "github.com/spf13/viper" // Removed Viper import
+
 	index "go-civitai-download/index"
 	"go-civitai-download/internal/database"
 	"go-civitai-download/internal/models"
@@ -142,11 +144,12 @@ func torrentWorker(id int, jobs <-chan torrentJob, wg *sync.WaitGroup, successCo
 }
 
 var (
-	torrentModelIDs     []int
-	announceURLs        []string
-	torrentOutputDir    string
-	overwriteTorrents   bool
-	generateMagnetLinks bool
+	torrentModelIDs        []int
+	announceURLs           []string
+	torrentOutputDir       string
+	overwriteTorrents      bool
+	generateMagnetLinks    bool
+	torrentConcurrencyFlag int // Added package-level var for concurrency flag
 )
 
 var torrentCmd = &cobra.Command{
@@ -160,20 +163,26 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 			return errors.New("at least one --announce URL is required")
 		}
 
-		// Retrieve settings using Viper
-		concurrency := viper.GetInt("concurrency") // Use viper
+		// Retrieve settings using globalConfig
+		cfg := globalConfig                    // Use the global config
+		concurrency := cfg.Torrent.Concurrency // Use Torrent specific concurrency
 		if concurrency <= 0 {
-			log.Warnf("Invalid concurrency value %d, defaulting to 4", concurrency)
+			log.Warnf("Invalid concurrency value %d from config, defaulting to 4", concurrency)
 			concurrency = 4
 		}
 
-		savePath := viper.GetString("savepath") // Use viper
+		savePath := cfg.SavePath // Use global config
 		if savePath == "" {
 			log.Error("Save path is not configured (--save-path or config file)")
 			return errors.New("save path is not configured (--save-path or config file)")
 		}
 
-		dbPath := viper.GetString("databasepath") // Use viper
+		dbPath := cfg.DatabasePath // Use global config
+		if dbPath == "" {
+			// This should be handled by Initialize setting a default based on SavePath
+			log.Error("Database path is not configured (and could not be defaulted)")
+			return errors.New("database path is not configured")
+		}
 		db, err := database.Open(dbPath)
 		if err != nil {
 			log.WithError(err).Errorf("Error opening database at %s", dbPath)
@@ -181,10 +190,11 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 		}
 		defer db.Close()
 
-		indexPath := viper.GetString("bleveindexpath") // Use viper
+		indexPath := cfg.BleveIndexPath // Use global config
 		if indexPath == "" {
-			indexPath = filepath.Join(savePath, "civitai.bleve")
-			log.Warnf("BleveIndexPath not set in config, defaulting to: %s", indexPath)
+			// This should be handled by Initialize setting a default
+			log.Warnf("BleveIndexPath not set in config, using default path derived from SavePath: %s", filepath.Join(savePath, "civitai.bleve"))
+			indexPath = filepath.Join(savePath, "civitai.bleve") // Default if not set
 		}
 		log.Infof("Opening/Creating Bleve index at: %s", indexPath)
 		bleveIndex, err := index.OpenOrCreateIndex(indexPath)
@@ -626,14 +636,7 @@ func init() {
 	torrentCmd.Flags().BoolVarP(&overwriteTorrents, "overwrite", "f", false, "Overwrite existing .torrent files")
 	torrentCmd.Flags().BoolVar(&generateMagnetLinks, "magnet-links", false, "Generate a .txt file containing the magnet link alongside each .torrent file")
 
-	// Bind flags to Viper keys if they correspond to config file options
-	// viper.BindPFlag("announce", torrentCmd.Flags().Lookup("announce")) // Example if needed
-	_ = viper.BindPFlag("torrent.outputdir", torrentCmd.Flags().Lookup("output-dir"))
-	_ = viper.BindPFlag("torrent.overwrite", torrentCmd.Flags().Lookup("overwrite"))
-	_ = viper.BindPFlag("torrent.magnetlinks", torrentCmd.Flags().Lookup("magnet-links"))
-
 	// Concurrency is often a command-line only setting, but could be bound too
-	torrentCmd.Flags().IntP("concurrency", "c", 4, "Number of concurrent torrent generation workers")
-	_ = viper.BindPFlag("concurrency", torrentCmd.Flags().Lookup("concurrency")) // Bind concurrency
-
+	// Link to package-level variable
+	torrentCmd.Flags().IntVarP(&torrentConcurrencyFlag, "concurrency", "c", 4, "Number of concurrent torrent generation workers")
 }

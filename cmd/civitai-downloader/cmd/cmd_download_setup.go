@@ -6,8 +6,6 @@ import (
 	"go-civitai-download/internal/models"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 // Variable to store concurrency level for flag parsing
@@ -28,85 +26,65 @@ var allowedPeriods = map[string]bool{
 	"Day":     true,
 }
 
-// Variables defined in download.go that are used here
-// var logLevel string // Declared in download.go
-// var logFormat string // Declared in download.go
+// buildQueryParameters initializes the query parameters based on the final loaded config.
+// It no longer uses Viper.
+func buildQueryParameters(cfg *models.Config) models.QueryParameters {
 
-// REMOVED init() function to avoid flag redefinition.
-// Flag definitions and bindings are now consolidated in download.go's init().
-
-// initLogging configures logrus based on persistent flags
-func initLogging() {
-	level, err := log.ParseLevel(logLevel)
-	if err != nil {
-		log.WithError(err).Warnf("Invalid log level '%s', using default 'info'", logLevel)
-		level = log.InfoLevel
-	}
-	log.SetLevel(level)
-
-	switch logFormat {
-	case "json":
-		log.SetFormatter(&log.JSONFormatter{})
-	case "text":
-		log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
-	default:
-		log.Warnf("Invalid log format '%s', using default 'text'", logFormat)
-		log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
+	// Determine API page limit based on user's total limit preference
+	userLimit := cfg.Download.Limit
+	apiPageLimit := 100 // Default API page limit
+	if userLimit > 0 && userLimit < 100 {
+		log.Debugf("User limit (%d) is less than 100, using it for API page limit.", userLimit)
+		apiPageLimit = userLimit
+	} else if userLimit <= 0 {
+		log.Debugf("User limit (%d) is invalid or zero, using default API page limit 100.", userLimit)
+		// apiPageLimit remains 100
+	} else { // userLimit >= 100
+		log.Debugf("User limit (%d) is 100 or greater, using default API page limit 100 for efficiency.", userLimit)
+		// apiPageLimit remains 100
 	}
 
-	log.Infof("Logging configured: Level=%s, Format=%s", log.GetLevel(), logFormat)
-}
+	sort := cfg.Download.Sort
+	if _, ok := allowedSortOrders[sort]; !ok {
+		log.Warnf("Invalid Sort value '%s' from config/flags, using default 'Most Downloaded'", sort)
+		sort = "Most Downloaded" // Default sort
+	}
 
-// setupQueryParams initializes the query parameters using Viper for flag/config precedence.
-func setupQueryParams(cfg *models.Config, cmd *cobra.Command) models.QueryParameters {
-	// Viper keys should match the keys used in viper.BindPFlag in init()
+	period := cfg.Download.Period
+	if _, ok := allowedPeriods[period]; !ok {
+		log.Warnf("Invalid Period value '%s' from config/flags, using default 'AllTime'", period)
+		period = "AllTime" // Default period
+	}
 
-	// Use viper.Get* for values that can be set by flags
-	limit := viper.GetInt("limit") // Viper key from download.go init
-	if limit <= 0 || limit > 100 {
-		if limit != 0 { // Don't warn if just using default
-			log.Warnf("Invalid Limit value '%d' from flag/config, using default 100", limit)
+	// Handle Username vs Usernames mismatch
+	// Use the first username if the list is not empty, otherwise empty string
+	username := ""
+	if len(cfg.Download.Usernames) > 0 {
+		if len(cfg.Download.Usernames) > 1 {
+			log.Warnf("Multiple usernames found in config Usernames list (%v), but API/flag only supports one. Using the first: '%s'", cfg.Download.Usernames, cfg.Download.Usernames[0])
 		}
-		limit = 100 // API default/max
+		username = cfg.Download.Usernames[0]
 	}
-
-	// Use global Viper directly now that TOML parsing is fixed
-	sort := viper.GetString("sort")
-	if sort == "" {
-		sort = "Most Downloaded"
-	} else if _, ok := allowedSortOrders[sort]; !ok {
-		log.Warnf("Invalid Sort value '%s' from flag/config, using default 'Most Downloaded'", sort)
-		sort = "Most Downloaded"
-	}
-
-	period := viper.GetString("period")
-	if period == "" {
-		period = "AllTime"
-	} else if _, ok := allowedPeriods[period]; !ok {
-		log.Warnf("Invalid Period value '%s' from flag/config, using default 'AllTime'", period)
-		period = "AllTime"
-	}
-
-	baseModels := viper.GetStringSlice("basemodels") // Viper should handle precedence correctly now
 
 	params := models.QueryParameters{
-		Limit:                  limit,
-		Page:                   1,
-		Query:                  viper.GetString("query"),
-		Tag:                    viper.GetString("tag"),
-		Username:               viper.GetString("username"),
-		Types:                  viper.GetStringSlice("modeltypes"),
-		Sort:                   sort,
-		Period:                 period,
-		PrimaryFileOnly:        viper.GetBool("primaryonly"),
+		Limit:           apiPageLimit, // Use the calculated API page limit
+		Page:            1,            // Page is usually not used with cursor-based pagination
+		Query:           cfg.Download.Query,
+		Tag:             cfg.Download.Tag,
+		Username:        username, // Use derived single username
+		Types:           cfg.Download.ModelTypes,
+		Sort:            sort,
+		Period:          period,
+		PrimaryFileOnly: cfg.Download.PrimaryOnly,
+		// Defaults for fields not typically overridden by user flags/config
 		AllowNoCredit:          true,
 		AllowDerivatives:       true,
 		AllowDifferentLicenses: true,
 		AllowCommercialUse:     "Any",
-		Nsfw:                   viper.GetBool("nsfw"),
-		BaseModels:             baseModels, // Use value directly from Viper
+		Nsfw:                   cfg.Download.Nsfw,
+		BaseModels:             cfg.Download.BaseModels,
 	}
 
-	log.WithField("params", fmt.Sprintf("%+v", params)).Debug("Final query parameters set")
+	log.WithField("params", fmt.Sprintf("%+v", params)).Debug("Final query parameters constructed")
 	return params
 }

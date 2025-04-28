@@ -6,51 +6,95 @@ import (
 )
 
 type (
+	// Config holds the application's configuration settings.
 	Config struct {
-		// Connection/Auth
-		ApiKey string `toml:"ApiKey"`
+		// Global settings
+		APIKey              string `toml:"ApiKey" json:"ApiKey"`
+		SavePath            string `toml:"SavePath" json:"SavePath"`
+		DatabasePath        string `toml:"DatabasePath" json:"DatabasePath"`
+		BleveIndexPath      string `toml:"BleveIndexPath" json:"BleveIndexPath"`
+		LogApiRequests      bool   `toml:"LogApiRequests" json:"LogApiRequests"`
+		LogLevel            string `toml:"LogLevel" json:"LogLevel"`
+		LogFormat           string `toml:"LogFormat" json:"LogFormat"`
+		APIDelayMs          int    `toml:"ApiDelayMs" json:"ApiDelayMs"`
+		APIClientTimeoutSec int    `toml:"ApiClientTimeoutSec" json:"ApiClientTimeoutSec"`
+		MaxRetries          int    `toml:"MaxRetries" json:"MaxRetries"`
+		InitialRetryDelayMs int    `toml:"InitialRetryDelayMs" json:"InitialRetryDelayMs"`
 
-		// Paths
-		SavePath       string `toml:"SavePath"`
-		DatabasePath   string `toml:"DatabasePath"`
-		BleveIndexPath string `toml:"BleveIndexPath"` // New field for Bleve index path
+		Download DownloadConfig `toml:"Download" json:"Download"`
+		Images   ImagesConfig   `toml:"Images" json:"Images"`
+		Torrent  TorrentConfig  `toml:"Torrent" json:"Torrent"`
+		DB       DBConfig       `toml:"DB" json:"DB"`
+	}
 
-		// Filtering - Model/Version Level
-		Query               string   `toml:"Query"`
-		Tag                 string   `toml:"Tag"`
-		Username            string   `toml:"Username"`
-		ModelTypes          []string `toml:"ModelTypes"` // Renamed from Types
-		BaseModels          []string `toml:"BaseModels"`
-		IgnoreBaseModels    []string `toml:"IgnoreBaseModels"`
-		Nsfw                bool     `toml:"Nsfw"`                // Renamed from GetNsfw
-		ModelVersionID      int      `toml:"ModelVersionID"`      // New
-		DownloadAllVersions bool     `toml:"DownloadAllVersions"` // New
-
-		// Filtering - File Level
-		PrimaryOnly           bool     `toml:"PrimaryOnly"` // Renamed from GetOnlyPrimaryModel
-		Pruned                bool     `toml:"Pruned"`      // Renamed from GetPruned
-		Fp16                  bool     `toml:"Fp16"`        // Renamed from GetFp16
+	// DownloadConfig holds settings specific to the 'download' command.
+	DownloadConfig struct {
+		Concurrency           int      `toml:"Concurrency"`
+		Tag                   string   `toml:"Tag"` // Using single tag based on current flag/API
+		Query                 string   `toml:"Query"`
+		ModelTypes            []string `toml:"ModelTypes"`
+		BaseModels            []string `toml:"BaseModels"`
+		Usernames             []string `toml:"Usernames"` // Mismatch with single --username flag noted in analysis
+		Nsfw                  bool     `toml:"Nsfw"`
+		Limit                 int      `toml:"Limit"`
+		MaxPages              int      `toml:"MaxPages"`
+		Sort                  string   `toml:"Sort"`
+		Period                string   `toml:"Period"`
+		ModelVersionID        int      `toml:"ModelVersionID"`
+		PrimaryOnly           bool     `toml:"PrimaryOnly"`
+		Pruned                bool     `toml:"Pruned"`
+		Fp16                  bool     `toml:"Fp16"`
+		AllVersions           bool     `toml:"AllVersions"`
+		IgnoreBaseModels      []string `toml:"IgnoreBaseModels"`
 		IgnoreFileNameStrings []string `toml:"IgnoreFileNameStrings"`
+		SkipConfirmation      bool     `toml:"SkipConfirmation"`
+		SaveMetadata          bool     `toml:"SaveMetadata"`
+		SaveModelInfo         bool     `toml:"ModelInfo"`
+		SaveVersionImages     bool     `toml:"VersionImages"`
+		SaveModelImages       bool     `toml:"ModelImages"`
+		DownloadMetaOnly      bool     `toml:"MetaOnly"`
 
-		// API Query Behavior
-		Sort     string `toml:"Sort"`
-		Period   string `toml:"Period"`
-		Limit    int    `toml:"Limit"`
-		MaxPages int    `toml:"MaxPages"` // New
+		// Fields corresponding to flags without direct config.toml entries
+		ModelID int `toml:"-"` // Flag only (`--model-id`)
+	}
 
-		// Downloader Behavior
-		Concurrency         int  `toml:"Concurrency"` // Renamed from DefaultConcurrency
-		SaveMetadata        bool `toml:"SaveMetadata"`
-		DownloadMetaOnly    bool `toml:"DownloadMetaOnly"`  // New
-		SaveModelInfo       bool `toml:"SaveModelInfo"`     // New
-		SaveVersionImages   bool `toml:"SaveVersionImages"` // New
-		SaveModelImages     bool `toml:"SaveModelImages"`   // New
-		SkipConfirmation    bool `toml:"SkipConfirmation"`  // New (for --yes flag)
-		ApiDelayMs          int  `toml:"ApiDelayMs"`
-		ApiClientTimeoutSec int  `toml:"ApiClientTimeoutSec"`
+	// ImagesConfig holds settings specific to the 'images' command.
+	// Added to config for potential future use, primarily driven by flags now.
+	ImagesConfig struct {
+		Limit          int    `toml:"Limit"`
+		PostID         int    `toml:"PostID"`
+		ModelID        int    `toml:"ModelID"`
+		ModelVersionID int    `toml:"ModelVersionID"`
+		Username       string `toml:"Username"`
+		Nsfw           string `toml:"Nsfw"`
+		Sort           string `toml:"Sort"`
+		Period         string `toml:"Period"`
+		Page           int    `toml:"Page"`
+		MaxPages       int    `toml:"MaxPages"`
+		OutputDir      string `toml:"OutputDir"`
+		Concurrency    int    `toml:"Concurrency"`
+		SaveMetadata   bool   `toml:"Metadata"`
+	}
 
-		// Other
-		LogApiRequests bool `toml:"LogApiRequests"`
+	// TorrentConfig holds settings specific to the 'torrent' command.
+	// Added to config for potential future use, primarily driven by flags now.
+	TorrentConfig struct {
+		OutputDir   string `toml:"OutputDir"`
+		Overwrite   bool   `toml:"Overwrite"`
+		MagnetLinks bool   `toml:"MagnetLinks"`
+		Concurrency int    `toml:"Concurrency"` // Separate from Download.Concurrency
+	}
+
+	// DBConfig holds settings specific to the 'db' command group.
+	DBConfig struct {
+		Verify DBVerifyConfig `toml:"Verify"`
+	}
+
+	// DBVerifyConfig holds settings for the 'db verify' subcommand.
+	// Added to config for potential future use, primarily driven by flags now.
+	DBVerifyConfig struct {
+		CheckHash      bool `toml:"CheckHash"`
+		AutoRedownload bool `toml:"AutoRedownload"` // Corresponds to --yes flag
 	}
 
 	// Api Calls and Responses
@@ -216,37 +260,18 @@ type (
 
 	// ImageApiResponse represents the structure of the response from the /api/v1/images endpoint.
 	ImageApiResponse struct {
-		Items    []ImageApiItem   `json:"items"` // Renamed Image -> ImageApiItem to avoid conflict
-		Metadata MetadataNextPage `json:"metadata"`
+		Items    []ImageApiItem     `json:"items"` // Renamed Image -> ImageApiItem to avoid conflict
+		Metadata PaginationMetadata `json:"metadata"`
 	}
 
 	// ImageApiItem represents a single image item specifically from the /api/v1/images response.
 	ImageApiItem struct {
-		ID        int         `json:"id"`
-		URL       string      `json:"url"`
-		Hash      string      `json:"hash"` // Blurhash
-		Width     int         `json:"width"`
-		Height    int         `json:"height"`
-		Nsfw      bool        `json:"nsfw"`      // Keep boolean for simplicity
-		NsfwLevel string      `json:"nsfwLevel"` // None, Soft, Mature, X
-		CreatedAt string      `json:"createdAt"`
-		PostID    *int        `json:"postId"`
-		Stats     ImageStats  `json:"stats"`
-		Meta      interface{} `json:"meta"`
-		Username  string      `json:"username"`
-		BaseModel string      `json:"baseModel"`
+		ID     int    `json:"id"`
+		URL    string `json:"url"`
+		Hash   string `json:"hash"` // Blurhash
+		Width  int    `json:"width"`
+		Height int    `json:"height"`
 	}
-
-	// MetadataNextPage is used when the API returns metadata with a `nextPage` URL.
-	MetadataNextPage struct {
-		TotalItems   int    `json:"totalItems,omitempty"`
-		CurrentPage  int    `json:"currentPage,omitempty"`
-		PageSize     int    `json:"pageSize,omitempty"`
-		NextCursor   string `json:"nextCursor,omitempty"`
-		NextPage     string `json:"nextPage,omitempty"`
-		PreviousPage string `json:"previousPage,omitempty"`
-	}
-	// --- End: /api/v1/images Endpoint Structures ---
 )
 
 // Database Status Constants

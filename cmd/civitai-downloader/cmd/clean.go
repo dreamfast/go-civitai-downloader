@@ -12,12 +12,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Package-level variables for clean flags
+var (
+	cleanTorrentsFlag bool
+	cleanMagnetsFlag  bool
+)
+
 func init() {
 	// Assumes rootCmd is defined in root.go within the same package
 	rootCmd.AddCommand(cleanCmd)
 
-	cleanCmd.Flags().BoolP("torrents", "t", false, "Also remove *.torrent files")
-	cleanCmd.Flags().BoolP("magnets", "m", false, "Also remove *-magnet.txt files")
+	// Link flags to package-level variables
+	cleanCmd.Flags().BoolVarP(&cleanTorrentsFlag, "torrents", "t", false, "Also remove *.torrent files")
+	cleanCmd.Flags().BoolVarP(&cleanMagnetsFlag, "magnets", "m", false, "Also remove *-magnet.txt files")
 }
 
 var cleanCmd = &cobra.Command{
@@ -33,7 +40,9 @@ func runClean(cmd *cobra.Command, args []string) {
 	cfg := globalConfig // Use the globalConfig variable
 	savePath := cfg.SavePath
 
-	// Get flag values
+	// Get flag values - These are now accessible directly via the package variables,
+	// but using cmd.Flags().GetBool() is also fine as Cobra handles it.
+	// Let's keep using cmd.Flags().GetBool() for consistency within Run functions.
 	cleanTorrents, _ := cmd.Flags().GetBool("torrents")
 	cleanMagnets, _ := cmd.Flags().GetBool("magnets")
 

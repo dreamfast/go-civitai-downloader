@@ -49,7 +49,7 @@ func init() {
 
 // runSearchImages determines the image index path and calls the shared search logic.
 func runSearchImages(cmd *cobra.Command, args []string) {
-	initLogging() // Initialize logging
+	// initLogging() // Removed - Logging initialized by PersistentPreRunE
 	log.Info("Starting Search Images Command")
 
 	// Determine the index path for images

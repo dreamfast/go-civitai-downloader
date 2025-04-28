@@ -19,7 +19,12 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+)
+
+// Package-level variables for db verify flags
+var (
+	dbVerifyCheckHashFlag bool
+	dbVerifyYesFlag       bool
 )
 
 // dbCmd represents the base command for database operations
@@ -78,11 +83,9 @@ func init() {
 	// dbViewCmd.Flags().StringP("filter", "f", "", "Filter results (e.g., by model name)")
 
 	// Add flags specific to db verify
-	dbVerifyCmd.Flags().Bool("check-hash", true, "Perform hash check for existing files")
-	dbVerifyCmd.Flags().BoolP("yes", "y", false, "Automatically attempt to redownload missing/mismatched files without prompting")
-	// Bind flags to Viper
-	_ = viper.BindPFlag("db.verify.checkhash", dbVerifyCmd.Flags().Lookup("check-hash"))
-	_ = viper.BindPFlag("db.verify.yes", dbVerifyCmd.Flags().Lookup("yes"))
+	// Link to package-level variables
+	dbVerifyCmd.Flags().BoolVar(&dbVerifyCheckHashFlag, "check-hash", true, "Perform hash check for existing files")
+	dbVerifyCmd.Flags().BoolVarP(&dbVerifyYesFlag, "yes", "y", false, "Automatically attempt to redownload missing/mismatched files without prompting")
 
 	// Add flags specific to db redownload if needed (e.g., force overwrite without hash check?)
 	// dbRedownloadCmd.Flags().Bool("force", false, "Force redownload even if file exists and hash matches")
@@ -160,9 +163,9 @@ type verificationProblem struct {
 
 func runDbVerify(cmd *cobra.Command, args []string) {
 	log.Info("Verifying database entries against filesystem...")
-	// Read flags using Viper
-	checkHashFlag := viper.GetBool("db.verify.checkhash")
-	autoRedownloadFlag := viper.GetBool("db.verify.yes")
+	// Read flags directly from globalConfig
+	checkHashFlag := globalConfig.DB.Verify.CheckHash           // Use config struct
+	autoRedownloadFlag := globalConfig.DB.Verify.AutoRedownload // Use config struct
 
 	// --- Basic Config Checks ---
 	if globalConfig.DatabasePath == "" {
@@ -255,7 +258,7 @@ func runDbVerify(cmd *cobra.Command, args []string) {
 		}
 
 		// --- Check/Create Metadata File if Enabled --- (moved down, only if main file is OK)
-		if mainFileFound && hashOK && viper.GetBool("savemetadata") {
+		if mainFileFound && hashOK && globalConfig.Download.SaveMetadata {
 			// Construct metadata filepath based on expectedPath (which already has the final filename)
 			metaFilename := strings.TrimSuffix(entry.Filename, filepath.Ext(entry.Filename)) + ".json"
 			metaFilepath := filepath.Join(globalConfig.SavePath, entry.Folder, metaFilename)
@@ -288,7 +291,7 @@ func runDbVerify(cmd *cobra.Command, args []string) {
 				// Metadata file exists
 				log.WithField("path", metaFilepath).Info("[METADATA OK] Metadata file exists.")
 			}
-		} else if viper.GetBool("savemetadata") && (!mainFileFound || !hashOK) {
+		} else if globalConfig.Download.SaveMetadata && (!mainFileFound || !hashOK) {
 			// Log skipping metadata check because main file is missing or hash mismatch
 			metaFilename := strings.TrimSuffix(entry.Filename, filepath.Ext(entry.Filename)) + ".json"
 			metaFilepath := filepath.Join(globalConfig.SavePath, entry.Folder, metaFilename)
@@ -354,7 +357,7 @@ func runDbVerify(cmd *cobra.Command, args []string) {
 						Timeout:   0, // Rely on transport timeouts
 						Transport: globalHttpTransport,
 					}
-					fileDownloader = downloader.NewDownloader(httpClient, globalConfig.ApiKey)
+					fileDownloader = downloader.NewDownloader(httpClient, globalConfig.APIKey)
 					log.Debug("Downloader initialized.")
 				}
 
@@ -409,13 +412,16 @@ func runDbVerify(cmd *cobra.Command, args []string) {
 				// Handle metadata saving only on successful redownload
 				if finalStatus == models.StatusDownloaded {
 					log.Debugf("Redownload successful for %s. Checking if metadata saving is enabled...", finalPath)
-					// We need a potentialDownload struct for handleMetadataSaving.
-					// Construct a simplified one from the entry.
-					pdForMeta := potentialDownload{
-						CleanedVersion: entry.Version, // Use the version from the DB entry
-					}
-					// Call handleMetadataSaving (pass nil for writer as we are not using uilive here)
-					handleMetadataSaving("VerifyRedownload", pdForMeta, finalPath, finalStatus, nil)
+					// REMOVE call to handleMetadataSaving - Verification should not save metadata.
+					/*
+						// We need a potentialDownload struct for handleMetadataSaving.
+						// Construct a simplified one from the entry.
+						pdForMeta := potentialDownload{
+							CleanedVersion: entry.Version, // Use the version from the DB entry
+						}
+						// Call handleMetadataSaving (pass nil for writer as we are not using uilive here)
+						handleMetadataSaving("VerifyRedownload", pdForMeta, finalPath, finalStatus, nil)
+					*/
 				}
 			} else {
 				log.Infof("Skipping redownload for %s (%s).", entry.Filename, entry.Folder)
@@ -487,7 +493,8 @@ func runDbRedownload(cmd *cobra.Command, args []string) {
 	// Create a new client instance for this command.
 	// TODO: Refactor client creation/sharing?
 	downloaderHttpClient := &http.Client{Timeout: 30 * time.Minute} // Longer timeout for downloads
-	fileDownloader := downloader.NewDownloader(downloaderHttpClient, globalConfig.ApiKey)
+	// Use correct case for APIKey
+	fileDownloader := downloader.NewDownloader(downloaderHttpClient, globalConfig.APIKey)
 
 	// Perform the download, checking the error
 	// Pass the Model Version ID from the database entry

@@ -252,46 +252,92 @@ func (d *Downloader) DownloadFile(targetFilepath string, url string, hashes mode
 		Total:  0,
 	}
 
-	// Write the body to temporary file, showing progress
-	log.Infof("Downloading to %s (Target: %s, Size: %s)...", tempFile.Name(), finalFilepath, helpers.BytesToSize(size))
+	// --- Perform Download ---
+	// Write the body to the temporary file
+	log.Infof("Downloading to %s (Target: %s, Size: %s)...",
+		tempFile.Name(),
+		finalFilepath,
+		helpers.BytesToSize(size),
+	)
 	_, err = io.Copy(counter, resp.Body)
 	if err != nil {
-		log.WithError(err).Errorf("Error writing temporary file %s", tempFile.Name())
-		return "", fmt.Errorf("%w: writing temporary file %s: %v", ErrFileSystem, tempFile.Name(), err)
+		// Explicitly close here before returning error, as defer won't run until func exits
+		_ = tempFile.Close()
+		return "", fmt.Errorf("writing to temporary file %s: %w", tempFile.Name(), err)
+	}
+
+	// Explicitly close the temporary file *after* writing is complete
+	if err := tempFile.Close(); err != nil {
+		return "", fmt.Errorf("%w: closing temporary file %s: %w", ErrFileSystem, tempFile.Name(), err)
 	}
 	log.Infof("Finished writing %s.", tempFile.Name())
 
-	// --- Explicitly close the file BEFORE hash check and rename ---
-	if err := tempFile.Close(); err != nil {
-		// Log the error, but try to continue with hash check/rename if closing failed?
-		// Or maybe return error here? Returning error seems safer.
-		log.WithError(err).Errorf("Failed to explicitly close temp file %s before hash/rename", tempFile.Name())
-		return "", fmt.Errorf("%w: closing temp file %s: %w", ErrFileSystem, tempFile.Name(), err)
+	// --- MIME Type Detection and Renaming --- START ---
+	// Re-open the temp file to detect content type
+	fileForDetect, err := os.Open(tempFile.Name())
+	if err != nil {
+		log.WithError(err).Errorf("Failed to re-open temp file %s for MIME detection", tempFile.Name())
+		return "", fmt.Errorf("%w: opening temp file for mime detection: %w", ErrFileSystem, err)
 	}
 
-	// Verify the hash of the downloaded temporary file ONLY if hashes were provided
+	buffer := make([]byte, 512) // Read first 512 bytes
+	n, err := fileForDetect.Read(buffer)
+	if err != nil && err != io.EOF {
+		_ = fileForDetect.Close()
+		log.WithError(err).Errorf("Failed to read from temp file %s for MIME detection", tempFile.Name())
+		return "", fmt.Errorf("%w: reading temp file for mime detection: %w", ErrFileSystem, err)
+	}
+	_ = fileForDetect.Close() // Close after reading
+
+	mimeType := http.DetectContentType(buffer[:n])
+	log.Debugf("Detected MIME type for %s: %s", tempFile.Name(), mimeType)
+
+	// Get the correct extension based on the detected MIME type
+	// Placeholder: Need a function/map like helpers.GetExtensionFromMimeType(mimeType)
+	correctExt, ok := helpers.GetExtensionFromMimeType(mimeType) // Assuming this helper exists
+	if !ok {
+		log.Warnf("Could not determine standard extension for detected MIME type '%s'. Using original extension '%s'.", mimeType, finalExt)
+		correctExt = finalExt // Fallback to the originally determined extension
+	}
+
+	// Reconstruct the final filename WITH the correct extension
+	finalBaseNameWithCorrectExt := finalBaseNameWithoutExt + correctExt // Use base name derived earlier
+	finalPathWithCorrectExt := filepath.Join(finalTargetDir, finalBaseNameWithCorrectExt)
+	log.Debugf("Final path with corrected extension based on MIME type: %s", finalPathWithCorrectExt)
+
+	// Use the corrected path for renaming
+	finalFilepath = finalPathWithCorrectExt // *** OVERWRITE finalFilepath ***
+	// --- MIME Type Detection and Renaming --- END ---
+
+	// Rename the temporary file to the final path (which now has the corrected extension)
+	log.Debugf("Renaming temporary file %s to final path %s", tempFile.Name(), finalFilepath)
+	if err := os.Rename(tempFile.Name(), finalFilepath); err != nil {
+		return "", fmt.Errorf("%w: renaming temporary file %s to %s: %w", ErrFileSystem, tempFile.Name(), finalFilepath, err)
+	}
+	log.Infof("Successfully renamed temp file to %s", finalFilepath)
+	shouldCleanupTemp = false // Prevent defer from removing the final file
+
+	// --- Hash Verification --- START ---
+	// Check if any standard hashes were actually provided
 	hashesProvided := hashes.SHA256 != "" || hashes.BLAKE3 != "" || hashes.CRC32 != "" || hashes.AutoV2 != ""
-	if hashesProvided {
-		log.Debugf("Verifying hash for temp file: %s", tempFile.Name())
-		if !helpers.CheckHash(tempFile.Name(), hashes) {
-			log.Errorf("Hash mismatch for downloaded file: %s", tempFile.Name())
+	if !hashesProvided {
+		log.Debugf("Skipping hash verification for %s (no expected hashes provided).", finalFilepath)
+	} else {
+		// Hashes were provided, perform the check
+		log.Debugf("Verifying hash for final file: %s", finalFilepath)
+		if !helpers.CheckHash(finalFilepath, hashes) {
+			log.Errorf("Hash mismatch for downloaded file: %s", finalFilepath)
+			// Optionally remove the bad file
+			// if removeErr := os.Remove(finalFilepath); removeErr != nil {
+			// 	 log.WithError(removeErr).Warnf("Failed to remove mismatched file: %s", finalFilepath)
+			// }
 			return "", ErrHashMismatch
 		}
-		log.Infof("Hash verified for %s.", tempFile.Name())
-	} else {
-		log.Debugf("Skipping hash verification for %s (no expected hashes provided).", tempFile.Name())
+		log.Infof("Hash verified for %s.", finalFilepath) // Log verification success
 	}
+	// --- Hash Verification --- END ---
 
-	// Rename the temporary file to the final path
-	log.Debugf("Renaming temp file %s to %s", tempFile.Name(), finalFilepath)
-	if err = os.Rename(tempFile.Name(), finalFilepath); err != nil {
-		log.WithError(err).Errorf("Error renaming temporary file %s to %s", tempFile.Name(), finalFilepath)
-		return "", fmt.Errorf("%w: renaming temporary file %s to %s: %v", ErrFileSystem, tempFile.Name(), finalFilepath, err)
-	}
-
-	// If rename was successful, we don't want the defer to remove the temp file (which is now the final file)
-	shouldCleanupTemp = false
+	// Success!
 	log.Infof("Successfully downloaded and verified %s", finalFilepath)
-
 	return finalFilepath, nil
 }

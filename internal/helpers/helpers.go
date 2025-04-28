@@ -248,3 +248,34 @@ func calculateHash(filePath string, hashAlgo hash.Hash) (string, error) {
 
 	return hex.EncodeToString(hashAlgo.Sum(nil)), nil
 }
+
+// -- MIME Type to Extension Mapping --
+
+// Define a map for common MIME types to their preferred extensions
+var mimeTypeToExtensionMap = map[string]string{
+	"image/jpeg": ".jpg", // Covers jpg and jpeg
+	"video/mp4":  ".mp4",
+	"image/webp": ".webp", // Common for animated webp, though technically video/webp exists
+	// Add more mappings as needed
+}
+
+// GetExtensionFromMimeType attempts to return a standard file extension for a given MIME type.
+// It considers the primary type (e.g., "image/png") and ignores parameters (like charset).
+// Returns the extension (including the dot) and true if found, otherwise empty string and false.
+func GetExtensionFromMimeType(mimeType string) (string, bool) {
+	// MIME types can have parameters like "text/plain; charset=utf-8"
+	// We only care about the main type.
+	mainMimeType := strings.Split(mimeType, ";")[0]
+	ext, ok := mimeTypeToExtensionMap[strings.ToLower(mainMimeType)]
+	return ext, ok
+}
+
+// StringSliceContains checks if a string slice contains a specific item (case-insensitive).
+func StringSliceContains(slice []string, item string) bool {
+	for _, s := range slice {
+		if strings.EqualFold(s, item) {
+			return true
+		}
+	}
+	return false
+}

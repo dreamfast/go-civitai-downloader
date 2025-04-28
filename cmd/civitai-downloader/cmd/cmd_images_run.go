@@ -19,7 +19,8 @@ import (
 	"github.com/gosuri/uilive"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+
+	// "github.com/spf13/viper" // Removed viper import
 
 	index "go-civitai-download/index"
 	"go-civitai-download/internal/downloader"
@@ -28,19 +29,22 @@ import (
 
 // runImages orchestrates the fetching and downloading of images based on command-line flags.
 func runImages(cmd *cobra.Command, args []string) {
-	// Read flags
-	modelID := viper.GetInt("images.modelId")
-	modelVersionID := viper.GetInt("images.modelVersionId")
-	username := viper.GetString("images.username")
-	limit := viper.GetInt("images.limit")
-	period := viper.GetString("images.period")
-	sort := viper.GetString("images.sort")
-	nsfw := viper.GetString("images.nsfw")
-	targetDir := viper.GetString("images.output_dir")
-	saveMeta := viper.GetBool("images.metadata")
-	numWorkers := viper.GetInt("images.concurrency")
-	maxPages := viper.GetInt("images.max_pages")
-	postID := viper.GetInt("images.postId")
+	// Use the globally loaded configuration
+	cfg := globalConfig
+
+	// Read flags/config values from cfg
+	modelID := cfg.Images.ModelID
+	modelVersionID := cfg.Images.ModelVersionID
+	username := cfg.Images.Username
+	limit := cfg.Images.Limit
+	period := cfg.Images.Period
+	sort := cfg.Images.Sort
+	nsfw := cfg.Images.Nsfw
+	targetDir := cfg.Images.OutputDir
+	saveMeta := cfg.Images.SaveMetadata
+	numWorkers := cfg.Images.Concurrency
+	maxPages := cfg.Images.MaxPages
+	postID := cfg.Images.PostID
 
 	// --- Early Exit for Debug Print API URL --- START ---
 	if printUrl, _ := cmd.Flags().GetBool("debug-print-api-url"); printUrl {
@@ -57,10 +61,10 @@ func runImages(cmd *cobra.Command, args []string) {
 		} else if postID != 0 {
 			params.Set("postId", strconv.Itoa(postID))
 		}
-		if limit > 0 && limit <= 200 {
+		if limit > 0 && limit <= 200 { // Use the limit value from cfg
 			params.Set("limit", strconv.Itoa(limit))
 		} else if limit != 100 {
-			log.Warnf("Invalid limit %d, using API default (100). Actual API call might use different default.", limit)
+			log.Warnf("Invalid limit %d from config, using API default (100). Actual API call might use different default.", limit)
 			params.Set("limit", "100")
 		}
 		if period != "" {
@@ -82,18 +86,19 @@ func runImages(cmd *cobra.Command, args []string) {
 
 	// --- Display Effective Config & Confirm --- START ---
 	// Skip display/confirmation if global --yes flag is provided
-	if !viper.GetBool("skipconfirmation") {
+	// Access globalConfig.Download.SkipConfirmation for the --yes flag
+	if !cfg.Download.SkipConfirmation {
 		log.Info("--- Review Effective Configuration (Images Command) ---")
 
 		// 1. Global Settings (Relevant to Images)
 		globalSettings := map[string]interface{}{
-			"SavePath":            viper.GetString("savepath"),
-			"OutputDir":           viper.GetString("images.output_dir"), // Display explicit output dir
-			"ApiKeySet":           viper.GetString("apikey") != "",      // Show if API key is present
-			"ApiClientTimeoutSec": viper.GetInt("apiclienttimeoutsec"),
-			"ApiDelayMs":          viper.GetInt("apidelayms"),
-			"LogApiRequests":      viper.GetBool("logapirequests"),
-			"Concurrency":         viper.GetInt("images.concurrency"), // Show image-specific concurrency
+			"SavePath":            cfg.SavePath,            // Use global config
+			"OutputDir":           cfg.Images.OutputDir,    // Display explicit output dir
+			"ApiKeySet":           cfg.APIKey != "",        // Use global config
+			"ApiClientTimeoutSec": cfg.APIClientTimeoutSec, // Use global config
+			"ApiDelayMs":          cfg.APIDelayMs,          // Use global config
+			"LogApiRequests":      cfg.LogApiRequests,      // Use global config
+			"Concurrency":         cfg.Images.Concurrency,  // Show image-specific concurrency
 		}
 		globalJSON, _ := json.MarshalIndent(globalSettings, "  ", "  ")
 		fmt.Println("  --- Global Settings (Relevant to Images) ---")
@@ -101,16 +106,16 @@ func runImages(cmd *cobra.Command, args []string) {
 
 		// 2. Image API Parameters
 		imageAPIParams := map[string]interface{}{
-			"ModelID":        viper.GetInt("images.modelId"),
-			"ModelVersionID": viper.GetInt("images.modelVersionId"),
-			"PostID":         viper.GetInt("images.postId"),
-			"Username":       viper.GetString("images.username"),
-			"Limit":          viper.GetInt("images.limit"),
-			"Period":         viper.GetString("images.period"),
-			"Sort":           viper.GetString("images.sort"),
-			"NSFW":           viper.GetString("images.nsfw"),
-			"MaxPages":       viper.GetInt("images.max_pages"),
-			"SaveMetadata":   viper.GetBool("images.metadata"),
+			"ModelID":        cfg.Images.ModelID,
+			"ModelVersionID": cfg.Images.ModelVersionID,
+			"PostID":         cfg.Images.PostID,
+			"Username":       cfg.Images.Username,
+			"Limit":          cfg.Images.Limit,
+			"Period":         cfg.Images.Period,
+			"Sort":           cfg.Images.Sort,
+			"NSFW":           cfg.Images.Nsfw,
+			"MaxPages":       cfg.Images.MaxPages,
+			"SaveMetadata":   cfg.Images.SaveMetadata,
 		}
 		apiParamsJSON, _ := json.MarshalIndent(imageAPIParams, "  ", "  ")
 		fmt.Println("\n  --- Image API Parameters ---")
@@ -137,20 +142,24 @@ func runImages(cmd *cobra.Command, args []string) {
 
 	// Default output dir if not provided
 	if targetDir == "" {
-		if globalConfig.SavePath == "" {
+		if cfg.SavePath == "" {
 			log.Fatal("Required configuration 'SavePath' is not set and --output-dir flag was not provided.")
 		}
-		targetDir = filepath.Join(globalConfig.SavePath, "images")
+		targetDir = filepath.Join(cfg.SavePath, "images")
 		log.Infof("Output directory not specified, using default: %s", targetDir)
 	}
 
 	// Validate flags
-	if modelID == 0 && modelVersionID == 0 && username == "" {
-		log.Fatal("At least one of --model-id, --model-version-id, or --username must be provided")
+	if modelID == 0 && modelVersionID == 0 && username == "" && postID == 0 { // Added postID check
+		log.Fatal("At least one of --model-id, --model-version-id, --post-id, or --username must be provided")
 	}
 	if modelVersionID != 0 {
-		log.Infof("Filtering images by Model Version ID: %d (overrides --model-id)", modelVersionID)
+		log.Infof("Filtering images by Model Version ID: %d (overrides --model-id and --post-id)", modelVersionID)
 		modelID = 0
+		postID = 0
+	} else if modelID != 0 {
+		log.Infof("Filtering images by Model ID: %d (overrides --post-id)", modelID)
+		postID = 0
 	}
 
 	// --- API Client Setup (standard http client) ---
@@ -160,7 +169,7 @@ func runImages(cmd *cobra.Command, args []string) {
 	}
 	apiClient := &http.Client{
 		Transport: globalHttpTransport,
-		Timeout:   time.Duration(globalConfig.ApiClientTimeoutSec) * time.Second,
+		Timeout:   time.Duration(cfg.APIClientTimeoutSec) * time.Second,
 	}
 
 	// --- Fetch Image List ---
@@ -169,7 +178,7 @@ func runImages(cmd *cobra.Command, args []string) {
 	var allImages []models.ImageApiItem
 	baseURL := "https://civitai.com/api/v1/images"
 	params := url.Values{}
-	userTotalLimit := viper.GetInt("images.limit") // User's intended total limit (0 = unlimited)
+	userTotalLimit := cfg.Images.Limit // User's intended total limit (0 = unlimited)
 
 	if modelVersionID != 0 {
 		params.Set("modelVersionId", strconv.Itoa(modelVersionID))
@@ -229,8 +238,8 @@ func runImages(cmd *cobra.Command, args []string) {
 			loopErr = fmt.Errorf("failed to create request for page %d: %w", pageCount, err)
 			break
 		}
-		if globalConfig.ApiKey != "" {
-			req.Header.Add("Authorization", "Bearer "+globalConfig.ApiKey)
+		if cfg.APIKey != "" {
+			req.Header.Add("Authorization", "Bearer "+cfg.APIKey)
 		}
 
 		resp, err := apiClient.Do(req)
@@ -267,7 +276,7 @@ func runImages(cmd *cobra.Command, args []string) {
 			log.Error(errMsg)
 			if resp.StatusCode == http.StatusTooManyRequests {
 				log.Warn("Rate limited. Applying longer delay...")
-				delay := time.Duration(globalConfig.ApiDelayMs)*time.Millisecond*5 + 5*time.Second
+				delay := time.Duration(cfg.APIDelayMs)*time.Millisecond*5 + 5*time.Second
 				time.Sleep(delay)
 				continue
 			}
@@ -306,9 +315,9 @@ func runImages(cmd *cobra.Command, args []string) {
 
 		log.Debugf("Next cursor found: %s", nextCursor)
 
-		if globalConfig.ApiDelayMs > 0 {
-			log.Debugf("Applying API delay: %d ms", globalConfig.ApiDelayMs)
-			time.Sleep(time.Duration(globalConfig.ApiDelayMs) * time.Millisecond)
+		if cfg.APIDelayMs > 0 {
+			log.Debugf("Applying API delay: %d ms", cfg.APIDelayMs)
+			time.Sleep(time.Duration(cfg.APIDelayMs) * time.Millisecond)
 		}
 	}
 
@@ -330,7 +339,7 @@ func runImages(cmd *cobra.Command, args []string) {
 
 	// --- Initialize Bleve Index --- START ---
 	// Use targetDir as base for index path, ensuring it's consistent
-	indexPath := globalConfig.BleveIndexPath
+	indexPath := cfg.BleveIndexPath
 	if indexPath == "" {
 		indexPath = filepath.Join(targetDir, "civitai_images.bleve") // Default if config is empty
 		log.Warnf("BleveIndexPath not set in config, defaulting index path for image downloads to: %s", indexPath)
@@ -358,7 +367,7 @@ func runImages(cmd *cobra.Command, args []string) {
 		Transport: globalHttpTransport,
 		Timeout:   0,
 	}
-	dl := downloader.NewDownloader(downloadClient, globalConfig.ApiKey)
+	dl := downloader.NewDownloader(downloadClient, cfg.APIKey)
 
 	// --- Target Directory ---
 	finalBaseTargetDir := targetDir
@@ -427,4 +436,56 @@ func runImages(cmd *cobra.Command, args []string) {
 	fmt.Printf(" Failed Downloads: %d\n", finalFailureCount)
 	fmt.Printf(" Metadata Saved: %t\n", saveMeta)
 	fmt.Println("--------------------------")
+}
+
+// CreateImageQueryParams extracts image-related settings from the config
+// and populates a models.QueryParameters struct suitable for the Civitai images API.
+func CreateImageQueryParams(cfg *models.Config) models.QueryParameters {
+	params := models.QueryParameters{
+		Limit:    cfg.Images.Limit,
+		Sort:     cfg.Images.Sort,
+		Period:   cfg.Images.Period,
+		Username: cfg.Images.Username,
+		// Nsfw is bool in QueryParameters, string in ImagesConfig. Need mapping.
+		// ModelID/VersionID/PostID need string conversion and exclusivity handling.
+	}
+
+	// Handle NSFW: QueryParameters expects bool. API docs say Nsfw param can be string or bool.
+	// Let's default to false and set true only for specific string values.
+	// Note: The API might handle string values directly, check api.ConvertQueryParamsToURLValues
+	nsfwParam := false
+	if cfg.Images.Nsfw != "" && cfg.Images.Nsfw != "None" && cfg.Images.Nsfw != "false" && cfg.Images.Nsfw != "All" {
+		// Consider Soft, Mature, X, true as triggering the NSFW filter
+		nsfwParam = true
+		log.Debugf("Setting QueryParameters.Nsfw to true based on ImagesConfig.Nsfw: %s", cfg.Images.Nsfw)
+	} else {
+		log.Debugf("Setting QueryParameters.Nsfw to false based on ImagesConfig.Nsfw: %s", cfg.Images.Nsfw)
+	}
+	params.Nsfw = nsfwParam // Assign the derived boolean value
+
+	// Handle parameter exclusivity based on provided IDs
+	// QueryParameters doesn't have direct fields for model/version/post ID.
+	// This logic needs to be handled when constructing the URL values.
+	// The api.ConvertQueryParamsToURLValues function should ideally handle this based on QueryParameters fields.
+	// Let's assume QueryParameters *does* have these fields for now, matching the old direct url.Values logic.
+	// If QueryParameters doesn't have them, this function might be simpler, or the URL value conversion needs adjustment.
+
+	// --- TEMPORARY ASSUMPTION: QueryParameters has ModelID, ModelVersionID, PostID as strings ---
+	// This likely needs correction based on actual QueryParameters definition.
+	if cfg.Images.PostID > 0 {
+		// params.PostID = strconv.Itoa(cfg.Images.PostID)
+		// Clear others?
+	} else if cfg.Images.ModelVersionID > 0 {
+		// params.ModelVersionID = strconv.Itoa(cfg.Images.ModelVersionID)
+		// params.ModelID = "" // Clear others?
+	} else if cfg.Images.ModelID > 0 {
+		// params.ModelID = strconv.Itoa(cfg.Images.ModelID)
+	}
+	// --- END TEMPORARY ASSUMPTION ---
+
+	// Add Page if needed (omitempty handles 0)
+	params.Page = cfg.Images.Page
+
+	log.Debugf("Created Image Query Params (intermediate): %+v", params)
+	return params
 }

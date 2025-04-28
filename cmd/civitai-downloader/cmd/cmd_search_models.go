@@ -61,7 +61,7 @@ func init() {
 
 // runSearchModels determines the model index path and calls the shared search logic.
 func runSearchModels(cmd *cobra.Command, args []string) {
-	initLogging() // Initialize logging
+	// initLogging() // Removed - Logging initialized by PersistentPreRunE
 	log.Info("Starting Search Models Command")
 
 	// Determine the index path for models

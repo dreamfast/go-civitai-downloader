@@ -57,16 +57,12 @@ func imageDownloadWorker(id int, jobs <-chan imageJob, downloader *downloader.Do
 	for job := range jobs {
 
 		// --- Construct Target Path --- START ---
-		// Create subdirectory based on username
-		authorSlug := helpers.ConvertToSlug(job.Metadata.Username)
-		if authorSlug == "" {
-			authorSlug = "unknown_author" // Fallback
-		}
-		// Add BaseModel subdirectory
-		baseModelSlug := helpers.ConvertToSlug(job.Metadata.BaseModel)
-		if baseModelSlug == "" {
-			baseModelSlug = "unknown_base_model"
-		}
+		// Create subdirectory based on username - USERNAME NOT AVAILABLE ON ImageApiItem
+		// authorSlug := helpers.ConvertToSlug(job.Metadata.Username)
+		authorSlug := "unknown_author" // Fallback, username unavailable
+		// Add BaseModel subdirectory - BASEMODEL NOT AVAILABLE ON ImageApiItem
+		// baseModelSlug := helpers.ConvertToSlug(job.Metadata.BaseModel)
+		baseModelSlug := "unknown_base_model"                                   // Fallback, base model unavailable
 		targetSubDir := filepath.Join(baseOutputDir, authorSlug, baseModelSlug) // Include baseModelSlug
 
 		// Construct filename: {id}-{url_filename_base}.{ext}
@@ -157,42 +153,23 @@ func imageDownloadWorker(id int, jobs <-chan imageJob, downloader *downloader.Do
 
 			// --- Index Item with Bleve --- START ---
 			if bleveIndex != nil {
-				// Extract data from meta with type assertions
-				var tags []string
-				var prompt string
-				var modelName string // Field not directly available, might be in meta?
-
-				if metaMap, ok := job.Metadata.Meta.(map[string]interface{}); ok && metaMap != nil {
-					if p, ok := metaMap["prompt"].(string); ok {
-						prompt = p
-					}
-					if t, ok := metaMap["tags"].([]interface{}); ok {
-						for _, tagInterface := range t {
-							if tagStr, ok := tagInterface.(string); ok {
-								tags = append(tags, tagStr)
-							}
-						}
-					}
-					// Check for model name in meta (unlikely standard field)
-					if mn, ok := metaMap["modelName"].(string); ok {
-						modelName = mn
-					} else if mn, ok := metaMap["model"].(string); ok { // Common alternative key
-						modelName = mn
-					}
-				}
+				// Extract data from meta with type assertions - META NOT AVAILABLE ON ImageApiItem
+				var tags []string = nil   // Default to nil
+				var prompt string = ""    // Default to empty
+				var modelName string = "" // Default to empty
 
 				itemToIndex := index.Item{
 					ID:          fmt.Sprintf("img_%d", job.ImageID),
 					Type:        "image",
 					Name:        baseFilename, // Use the calculated filename
-					Description: prompt,       // Use extracted prompt as description
+					Description: prompt,       // Use extracted prompt as description (will be empty)
 					FilePath:    targetPath,
-					ModelName:   modelName, // Use extracted model name if found
-					BaseModel:   job.Metadata.BaseModel,
-					CreatorName: job.Metadata.Username,
-					Tags:        tags, // Use extracted tags
-					Prompt:      prompt,
-					NsfwLevel:   job.Metadata.NsfwLevel,
+					ModelName:   modelName,     // Use extracted model name if found (will be empty)
+					BaseModel:   baseModelSlug, // Use the derived fallback slug
+					CreatorName: authorSlug,    // Use the derived fallback slug
+					Tags:        tags,          // Use extracted tags (will be nil)
+					Prompt:      prompt,        // Will be empty
+					// NsfwLevel:   job.Metadata.NsfwLevel, // NSFW Level not available
 				}
 				if indexErr := index.IndexItem(bleveIndex, itemToIndex); indexErr != nil {
 					log.WithError(indexErr).Errorf("Worker %d: Failed to index downloaded image %s (ID: %s)", id, targetPath, itemToIndex.ID)
