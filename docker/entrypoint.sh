@@ -4,8 +4,8 @@ set -e
 # Cleanup function
 cleanup() {
   echo "Received exit signal. Cleaning up..."
-  kill -TERM "$NGINX_PID" "${DL_PIDS[@]}" 2>/dev/null
-  wait "$NGINX_PID" "${DL_PIDS[@]}"
+  kill -TERM "$NGINX_PID" "${DL_PID}" 2>/dev/null
+  wait "$NGINX_PID" "${DL_PID}"
   exit 0
 }
 
@@ -29,9 +29,6 @@ DEFAULT_BASE_MODELS='SD 1.5,SDXL 1.0,Pony,Flux.1 D,Illustrious,NoobAI,Hunyuan Vi
 
 IFS=',' read -ra USERNAMES <<< "$CIVITAI_USERNAME"
 IFS=',' read -ra BASE_MODELS <<< "${CIVITAI_BASE_MODELS:$DEFAULT_BASE_MODELS}"
-
-# Keep track of background download processes
-DL_PIDS=()
 
 # Sequentially process each user
 for username in "${USERNAMES[@]}"; do
