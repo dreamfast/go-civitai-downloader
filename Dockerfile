@@ -15,9 +15,6 @@ RUN apt-get update && apt-get install -y nginx ca-certificates && apt-get clean
 # Copy civitai-downloader binary
 COPY --from=builder /src/civitai-downloader /usr/bin/civitai-downloader
 
-# Create workspace
-RUN mkdir -p /workspace/civitai-export
-
 # Copy configs and entrypoint last
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/civitai-config.template.toml /etc/civitai/config.template.toml
