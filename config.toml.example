@@ -94,11 +94,14 @@ MaxPages = 0
 # Number of concurrent download workers. Corresponds to -c flag.
 Concurrency = 4
 # Save a .json file containing model version metadata alongside each downloaded file. Corresponds to --metadata flag.
-SaveMetadata = true # Corresponds to --metadata flag.
+# Default is true.
+SaveMetadata = true
 # Save a full model info JSON (including all versions) to '[SavePath]/[Type]/[ModelSlug]/'. Corresponds to --model-info flag.
-ModelInfo = true # Default is true. TOML key is "ModelInfo".
+# Default is true.
+ModelInfo = true
 # Download preview images associated with the specific downloaded model version. Saves to '[SavePath]/[Type]/[ModelSlug]/[VersionID]/images/'. Corresponds to --version-images flag.
-VersionImages = true # Default is true. TOML key is "VersionImages".
+# Default is false.
+VersionImages = true
 # When SaveModelInfo is true, also download all images for *all* versions of the model. Saves to '[SavePath]/[Type]/[ModelSlug]/images/'. Corresponds to --model-images flag.
 ModelImages = false # Default is false. TOML key is "ModelImages".
 # Only download and save metadata/image files, skip actual model file download. Corresponds to --meta-only flag.

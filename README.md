@@ -71,7 +71,7 @@ Generally arguments passed into the application will override the config file se
 | :---------------------- | :--------- | :------------------- | :------------------------------------------------------------------------------------------------------ |
 | `ApiKey`                | `string`   | `""`                 | Your Civitai API Key (Required for downloading models).                                                  |
 | `SavePath`              | `string`   | `"downloads"`        | Root directory where model subdirectories (like `lora/sdxl_1.0/mymodel/`) will be saved.                 |
-| `DatabasePath`          | `string`   | `""`                 | Path to the database file. If empty, defaults to `[SavePath]/civitai_download_db`.                      |
+| `DatabasePath`          | `string`   | `""`                 | Path to the database file. If empty, defaults to `[SavePath]/civitai.db`.                        |
 | `BleveIndexPath`        | `string`   | `""`                 | Path to the Bleve search index directory. If empty, defaults to `[SavePath]/civitai.bleve`.            |
 | `Query`                 | `string`   | `""`                 | Default search query string.                                                                            |
 | `Tag`                   | `string`   | `""`                 | Default tag to filter by. (`-t, --tag` flag)                                                           |
@@ -88,12 +88,12 @@ Generally arguments passed into the application will override the config file se
 | `IgnoreFileNameStrings` | `[]string` | `[]`                 | List of strings to ignore in filenames (case-insensitive substring match). (`--ignore-filename-strings` flag) |
 | `Sort`                  | `string`   | `"Most Downloaded"`  | Default sort order for API queries ("Highest Rated", "Most Downloaded", "Newest"). (`--sort` flag)      |
 | `Period`                | `string`   | `"AllTime"`          | Default time period for sorting ("AllTime", "Year", "Month", "Week", "Day"). (`--period` flag)        |
-| `Limit`                 | `int`      | `100`                | Default models per API page (1-100). (`--limit` flag)                                                   |
+| `Limit`                 | `int`      | `100`                | Acts as TOTAL download limit if set. (`--limit` flag)         |
 | `MaxPages`              | `int`      | `0`                  | Default maximum number of API pages to fetch (0 for no limit). (`--max-pages` flag)                     |
 | `Concurrency`           | `int`      | `4`                  | Default number of concurrent downloads. (`--concurrency` flag)                                          |
-| `Metadata`              | `bool`     | `false`              | Save a `.json` metadata file (containing the full version details) alongside downloads (overrides config `Metadata`).
-| `MetaOnly`              | `bool`     | `false`              | Scan, check DB, and save *only* the `.json` metadata files for potential downloads, skipping the actual model file download and confirmation prompt. Useful with `--model-info`.
-| `ModelInfo`             | `bool`     | `false`              | Save full model info JSON to `{SavePath}/{type}/{modelName}/{modelID}-{modelNameSlug}.json`. (`--model-info` flag)                          |
+| `SaveMetadata`          | `bool`     | `true`               | Save a `.json` metadata file (containing the full version details) alongside downloads. (`--metadata` flag) |
+| `MetaOnly`              | `bool`     | `false`              | Scan, check DB, and save *only* the `.json` metadata files for potential downloads, skipping the actual model file download and confirmation prompt. (`--meta-only` flag) |
+| `ModelInfo`             | `bool`     | `true`               | Save full model info JSON to `{SavePath}/{type}/{modelName}/{modelID}-{modelNameSlug}.json`. (`--model-info` flag)                          |
 | `VersionImages`         | `bool`     | `false`              | Download images associated with the specific downloaded version into `{SavePath}/{type}/{modelName}/{baseModel}/{versionID}-{fileNameSlug}/images/`. (`--version-images` flag)              |
 | `ModelImages`           | `bool`     | `false`              | When `ModelInfo` is true, also download all images for all versions into `{SavePath}/{type}/{modelName}/images/`. (`--model-images` flag)           |
 | `SkipConfirmation`      | `bool`     | `false`              | Skip the confirmation prompt before downloading. (`--yes` flag)                                       |
@@ -173,12 +173,12 @@ Scans the Civitai API based on filters, asks for confirmation, and then download
 *   `--ignore-filename-strings strings`: Substrings in filenames to ignore (comma-separated or multiple flags, overrides config `IgnoreFileNameStrings`). *(No shorthand)*
 *   `-c, --concurrency int`: Number of concurrent downloads (overrides config `Concurrency`).
 *   `--max-pages int`: Maximum number of API pages to fetch (0 for no limit). *(No shorthand)*
-*   `--metadata`: Save a `.json` metadata file (containing the full version details) alongside downloads (overrides config `Metadata`).
+*   `--metadata`: Save a `.json` metadata file (containing the full version details) alongside downloads (overrides config `SaveMetadata`).
 *   `-y, --yes`: Skip confirmation prompt before downloading (overrides config `SkipConfirmation`).
 *   `--meta-only`: Scan, check DB, and save *only* the `.json` metadata files for potential downloads, skipping the actual model file download and confirmation prompt. Useful with `--model-info`.
 *   `--model-info`: During the scan phase, save the *full* JSON data for each model returned by the API to `{SavePath}/{type}/{modelName}/{modelID}-{modelNameSlug}.json`. Overwrites existing files.
 *   `--version-images`: After a model file download succeeds, download the associated preview/example images for that specific version into a `{SavePath}/{type}/{modelName}/{baseModel}/{versionID}-{fileNameSlug}/images/` subdirectory.
-*   `--model-images`: **Requires `--model-info`.** When saving the full model info JSON, also attempt to download *all* images associated with *all* versions listed in the model info. Images are saved into `{SavePath}/{type}/{modelName}/images/{versionId}/{imageId}.{ext}`.
+*   `--model-images`: **Requires `--model-info`.** When saving the full model info JSON, also attempt to download *all* images associated with *all* versions listed in the model info. Images are saved into `{SavePath}/{type}/{modelName}/images/`.
 *   `--all-versions`: Download all versions of a model, not just the latest (overrides version selection and config `AllVersions`).
 
 **Examples:**
@@ -416,11 +416,7 @@ Searches the local Bleve index for downloaded items (models, images, etc.) based
 
 ### 28 August 2025
 
-*   Modified API query parameter handling:
-    *   The `nsfw` parameter is now always included in API requests (as `nsfw=true` or `nsfw=false`).
-    *   The `query` parameter is only included if a non-empty query string is provided.
-    *   Hoepefully the empty api results issue is now fixed
-*   Refactored integration test helper (`compareConfigAndURL`) for clarity and robustness.
+*   Mostly a big refactor of the config and arguments as before that was a bit messy, it was tough to refactor so I can continue in a few days. There are some dev binaries available with the latest. See the dev release for more info on what has changed.
 
 ### 27 August 2025
 
