@@ -50,5 +50,16 @@ done &
 
 DL_PID=$!
 
+# Create a zip archive inside the export folder
+echo "Creating ZIP archive..."
+cd /workspace/civitai-export
+zip -r everything.zip .
+
+# Fix permissions for the ZIP too
+chmod a+r /workspace/civitai-export/everything.zip
+chown www-data:www-data /workspace/civitai-export/everything.zip
+
+echo "ZIP archive ready: /workspace/civitai-export/everything.zip"
+
 # Wait for nginx and the download loop
 wait "$NGINX_PID" "$DL_PID"
