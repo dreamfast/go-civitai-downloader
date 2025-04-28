@@ -13,7 +13,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # Create the output folder
-mkdir /workspace/civitai-export
+mkdir -p /workspace/civitai-export
 
 # Interpolate the config
 envsubst < /etc/civitai/config.template.toml > /etc/civitai/config.toml
