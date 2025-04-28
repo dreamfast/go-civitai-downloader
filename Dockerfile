@@ -10,7 +10,7 @@ RUN git clone https://github.com/dreamfast/go-civitai-downloader.git /src \
 FROM debian:bullseye-slim
 
 # Install nginx and any required dependencies
-RUN apt-get update && apt-get install -y nginx ca-certificates gettext-base && apt-get clean
+RUN apt-get update && apt-get install -y nginx ca-certificates gettext-base zip && apt-get clean
 
 # Copy civitai-downloader binary
 COPY --from=builder /src/civitai-downloader /usr/bin/civitai-downloader
