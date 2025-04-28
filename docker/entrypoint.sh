@@ -41,7 +41,8 @@ for username in "${USERNAMES[@]}"; do
     /usr/bin/civitai-downloader download --base-models "$base_model" -u "$username" -c 4 --model-info -y --config /etc/civitai/config.toml
   done
 
-  /usr/bin/civitai-downloader images -u "$username" -c 4 --metadata --config /etc/civitai/config.toml
+  /usr/bin/civitai-downloader images -u "$username" -c 4 --nsfw=true --metadata --config /etc/civitai/config.toml
+  /usr/bin/civitai-downloader images -u "$username" -c 4 --nsfw=false --metadata --config /etc/civitai/config.toml
 
   # After downloads: fix ownership and permissions again
   chmod -R a+rX /workspace/civitai-export
