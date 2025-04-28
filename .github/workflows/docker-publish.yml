@@ -3,7 +3,7 @@ name: Build and Publish Docker Image
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch: # Allow manual trigger too
 
 jobs:
