@@ -159,6 +159,8 @@ func (d *Downloader) DownloadFile(targetFilepath string, url string, hashes mode
 	if err != nil {
 		return "", fmt.Errorf("%w: creating download request for %s: %w", ErrHttpRequest, url, err)
 	}
+	// Set browser-like user agent
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	// Add authentication header if API key is present
 	log.Debugf("Downloader stored API Key: %s", d.apiKey) // Added Debug Log

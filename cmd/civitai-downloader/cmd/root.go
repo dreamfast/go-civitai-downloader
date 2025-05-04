@@ -64,8 +64,12 @@ func Execute() {
 }
 
 func init() {
+	// Initialize Viper before adding flags so we can bind them
+	viper.SetConfigName("config") // name of config file (without extension)
+	viper.SetConfigType("toml")   // REQUIRED if the config file does not have the extension in the name
+
 	// Add persistent flags that apply to all commands
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config.toml", "Configuration file path")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Configuration file path (default is ./config.toml or ~/.config/civitai-downloader/config.toml)")
 
 	// Add persistent flags for logging
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Logging level (trace, debug, info, warn, error, fatal, panic)")
@@ -131,28 +135,42 @@ func loadGlobalConfig(cmd *cobra.Command, args []string) error {
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
-
+	viper.SetEnvPrefix("CIVITAI") // Set prefix for env vars
 	// Normalize keys (e.g., from config like BaseModels to BASMODELS)
 	// Might help resolve precedence issues with bound flags
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		log.Infof("Using configuration file: %s", viper.ConfigFileUsed())
-		// Try merging again AFTER potential flag bindings? Seems redundant but maybe forces precedence.
-		// if mergeErr := viper.MergeInConfig(); mergeErr != nil {
-		// 	log.WithError(mergeErr).Warnf("Error merging config file after read: %s", viper.ConfigFileUsed())
-		// }
-	} else {
-		// Handle errors reading the config file
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Config file not found; ignore error if desired
-			log.Warnf("Config file not found. Using defaults and flags.")
-		} else {
-			// Config file was found but another error was produced
-			log.WithError(err).Warnf("Error reading config file: %s", viper.ConfigFileUsed())
-			// Don't make it fatal, let flags/defaults take over
+	// Check environment variable for API key if not set in config
+	if viper.GetString("apikey") == "" {
+		if envKey := os.Getenv("CIVITAI_DOWNLOADER_APIKEY"); envKey != "" {
+			viper.Set("apikey", envKey)
+			log.Debug("Using API key from CIVITAI_DOWNLOADER_APIKEY environment variable")
 		}
+	}
+
+	// Set config search paths
+	if cfgFile != "" {
+		// Use explicit config file path from flag
+		viper.SetConfigFile(cfgFile)
+	} else {
+		// Search in standard locations
+		viper.AddConfigPath(".") // Current directory
+		if home, err := os.UserHomeDir(); err == nil {
+			viper.AddConfigPath(filepath.Join(home, ".config", "civitai-downloader"))
+		}
+	}
+
+	// Read in config file
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.Info("No config file found, using defaults and flags")
+		} else {
+			// Config file was found but another error occurred
+			log.Errorf("Error reading config file: %v", err)
+			os.Exit(1)
+		}
+	} else {
+		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
 	// --- Try merging config AFTER reading and AutomaticEnv ---
 	if viper.ConfigFileUsed() != "" { // Only merge if a config file was actually used
