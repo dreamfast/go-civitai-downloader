@@ -114,6 +114,16 @@ func init() {
 var logLevel string
 var logFormat string
 
+func maskApiKey(key string) string {
+	if key == "" {
+		return "(not set)"
+	}
+	if len(key) <= 4 {
+		return "****" // shouldn't happen with valid keys
+	}
+	return "****" + key[len(key)-4:] // show last 4 chars
+}
+
 // setupDownloadEnvironment handles the initialization of database, downloaders, and concurrency settings.
 func setupDownloadEnvironment(cmd *cobra.Command, cfg *models.Config) (db *database.DB, fileDownloader *downloader.Downloader, imageDownloader *downloader.Downloader, concurrencyLevel int, err error) {
 	// --- Database Setup ---
@@ -298,6 +308,7 @@ func confirmParameters(queryParams models.QueryParameters) bool {
 		"SavePath":       viper.GetString("savepath"),
 		"DatabasePath":   viper.GetString("databasepath"),
 		"BleveIndexPath": viper.GetString("bleveindexpath"),
+		"ApiKey":         maskApiKey(viper.GetString("apikey")), // Show masked API key
 		// Filtering - Model/Version
 		"DownloadAllVersions": viper.GetBool("downloadallversions"),
 		"ModelVersionID":      viper.GetInt("modelversionid"),
@@ -453,6 +464,7 @@ func runDownload(cmd *cobra.Command, args []string) {
 			"SavePath":       viper.GetString("savepath"),
 			"DatabasePath":   viper.GetString("databasepath"),
 			"BleveIndexPath": viper.GetString("bleveindexpath"),
+			"ApiKey":         maskApiKey(viper.GetString("apikey")),
 			// Filtering - Model/Version
 			"DownloadAllVersions": viper.GetBool("downloadallversions"),
 			"ModelVersionID":      viper.GetInt("modelversionid"),

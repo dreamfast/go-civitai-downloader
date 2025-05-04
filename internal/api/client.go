@@ -91,7 +91,14 @@ func NewClient(apiKey string, httpClient *http.Client, cfg models.Config) *Clien
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
-	// Log the value being passed
+
+	// Enhanced API key logging
+	if apiKey != "" {
+		log.Infof("Initializing API client with key: %s", apiKey)
+	} else {
+		log.Warn("Initializing API client without authentication key - some endpoints may be restricted")
+	}
+
 	log.Debugf("NewClient called, cfg.LogApiRequests value: %t", cfg.LogApiRequests)
 	// Configure the logger based on the *global* config setting
 	configureApiLogger(cfg.LogApiRequests)
@@ -130,7 +137,10 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 
 	req.Header.Set("Content-Type", "application/json")
 	if c.ApiKey != "" {
+		log.Debugf("Adding Authorization header with API key to request for %s", reqURL)
 		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
+	} else {
+		log.Debugf("Making unauthenticated request to %s", reqURL)
 	}
 
 	// --- Log API Request ---
@@ -196,6 +206,11 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 		case http.StatusTooManyRequests:
 			lastErr = ErrRateLimited
 		case http.StatusUnauthorized, http.StatusForbidden:
+			if c.ApiKey != "" {
+				log.Errorf("API request unauthorized with key (status %d) - check if key is valid", resp.StatusCode)
+			} else {
+				log.Errorf("API request unauthorized (status %d) - endpoint may require authentication", resp.StatusCode)
+			}
 			lastErr = ErrUnauthorized
 			goto RequestFailed // Non-retryable auth error
 		case http.StatusNotFound:
