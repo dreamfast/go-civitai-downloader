@@ -30,14 +30,11 @@ var apiTimeoutFlag int
 // bleveIndexPathFlag holds the value of the --bleve-index-path flag (needed for persistent flag)
 var bleveIndexPathFlag string
 
-// --- Additions Start ---
 // logLevelFlagValue holds the value of the --log-level flag, bound by Cobra
 var logLevelFlagValue string
 
 // logFormatFlagValue holds the value of the --log-format flag, bound by Cobra
 var logFormatFlagValue string
-
-// --- Additions End ---
 
 // apiKeyFlag holds the value of the --api-key flag (defined in download.go, but needs global access?)
 // Consider moving the flag definition here if truly global.
@@ -46,7 +43,7 @@ var logFormatFlagValue string
 // globalConfig holds the loaded configuration from config.Initialize
 var globalConfig models.Config
 
-// globalHttpTransport holds the globally configured HTTP transport from config.Initialize
+// globalHttpTransport holds the globally configured HTTP transport
 var globalHttpTransport http.RoundTripper
 
 // rootCmd represents the base command when called without any subcommands
@@ -55,9 +52,7 @@ var rootCmd = &cobra.Command{
 	Short: "A tool to download models from Civitai",
 	Long: `Civitai Downloader allows you to fetch and manage models 
 from Civitai.com based on specified criteria.`,
-	// PersistentPreRunE ensures config is loaded before ANY command runs.
 	PersistentPreRunE: loadGlobalConfig,
-	// Run: func(cmd *cobra.Command, args []string) { },
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -70,71 +65,95 @@ func Execute() {
 }
 
 func init() {
-	// Define persistent flags. Viper binding is removed.
+	// Define persistent flags, binding them to global variables.
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config.toml", "Configuration file path")
-	// Bind log-level and log-format to global variables
 	rootCmd.PersistentFlags().StringVar(&logLevelFlagValue, "log-level", "info", "Logging level (trace, debug, info, warn, error, fatal, panic)")
 	rootCmd.PersistentFlags().StringVar(&logFormatFlagValue, "log-format", "text", "Logging format (text, json)")
 	rootCmd.PersistentFlags().BoolVar(&logApiFlag, "log-api", false, "Log API requests/responses to api.log (overrides config)")
-	rootCmd.PersistentFlags().StringVar(&savePathFlag, "save-path", "", "Directory to save models (overrides config)")
-	rootCmd.PersistentFlags().IntVar(&apiDelayFlag, "api-delay", -1, "Delay between API calls in ms (overrides config, -1 uses config default)")
-	rootCmd.PersistentFlags().IntVar(&apiTimeoutFlag, "api-timeout", -1, "Timeout for API HTTP client in seconds (overrides config, -1 uses config default)")
-	rootCmd.PersistentFlags().StringVar(&bleveIndexPathFlag, "bleve-index-path", "", "Directory for the search index (overrides config)")
+	rootCmd.PersistentFlags().StringVar(&savePathFlag, "save-path", "", "Directory to save models (overrides config)")                                        // Default empty string
+	rootCmd.PersistentFlags().IntVar(&apiDelayFlag, "api-delay", -1, "Delay between API calls in ms (overrides config, -1 uses config default)")              // Default -1
+	rootCmd.PersistentFlags().IntVar(&apiTimeoutFlag, "api-timeout", -1, "Timeout for API HTTP client in seconds (overrides config, -1 uses config default)") // Default -1
+	rootCmd.PersistentFlags().StringVar(&bleveIndexPathFlag, "bleve-index-path", "", "Directory for the search index (overrides config)")                     // Default empty string
 
 	// Removed viper.BindPFlag calls
 	// Removed viper.SetDefault calls
 }
 
 // loadGlobalConfig populates the config.CliFlags struct based on the state of
-// cobra flags and then calls config.Initialize to load the actual configuration.
+// bound global flag variables and then calls config.Initialize to load the actual configuration.
+// It runs before any command via PersistentPreRunE.
 func loadGlobalConfig(cmd *cobra.Command, args []string) error {
 	log.Debug("Attempting to load global configuration...")
 	flags := config.CliFlags{}
 
 	// --- Populate CliFlags from Persistent Flags ---
+	// Check if flags differ from their default values instead of using .Changed()
+	// Need to know the actual default values defined in init()
+
+	// Config File Path (Default: "config.toml") - Check if explicitly set
+	// Cobra's .Changed() is generally reliable for StringVar when default isn't empty.
 	if cmd.PersistentFlags().Changed("config") {
 		flags.ConfigFilePath = &cfgFile
 	}
 
-	// --- Use bound flag variables directly ---
-	flags.LogLevel = &logLevelFlagValue   // Store pointer to bound variable
-	flags.LogFormat = &logFormatFlagValue // Store pointer to bound variable
+	// Log Level (Default: "info")
+	if logLevelFlagValue != "info" { // Check against default
+		flags.LogLevel = &logLevelFlagValue
+	}
 
-	// --- TEMPORARY DEBUG ---
-	// fmt.Printf("!!! Flag --log-level value read: %s\n", logLevelFlagValue) // Use bound var // REMOVED
-	// --- END TEMP DEBUG ---
+	// Log Format (Default: "text")
+	if logFormatFlagValue != "text" { // Check against default
+		flags.LogFormat = &logFormatFlagValue
+	}
 
-	// --- Early Logging Configuration (using flag values) ---
-	// --- TEMPORARY DEBUG ---
-	// fmt.Printf("!!! Calling configureLoggingFromFlags with level: %s, format: %s\n", logLevelFlagValue, logFormatFlagValue) // Use bound vars // REMOVED
-	// --- END TEMP DEBUG ---
-	configureLoggingFromFlags(logLevelFlagValue, logFormatFlagValue) // Use bound vars
+	// --- Early Logging Configuration (using potentially non-default flag values) ---
+	// Use the *actual* values from the bound variables for early setup
+	configureLoggingFromFlags(logLevelFlagValue, logFormatFlagValue)
 	log.Debug("Initial logging configured from flags (before config file load)")
 
-	// Continue populating other flags...
-	if logApiFlag { // If the flag was set to true via command line
-		log.Debugf("[loadGlobalConfig] --log-api flag detected as true. Overriding config.")
+	// Log API (Default: false)
+	if logApiFlag { // Check the boolean value directly
+		log.Debugf("[loadGlobalConfig] --log-api flag detected as true.")
 		flags.LogApiRequests = &logApiFlag // Assign address of the true value
 	} else {
-		log.Debugf("[loadGlobalConfig] --log-api flag not detected or is false. Will rely on config file/defaults.")
-		// Keep flags.LogApiRequests nil if flag wasn't explicitly set to true
+		log.Debugf("[loadGlobalConfig] --log-api flag not detected or is false.")
 	}
 
-	if cmd.PersistentFlags().Changed("save-path") {
+	// Save Path (Default: "")
+	if savePathFlag != "" { // Check if it's not the default empty string
+		log.Debugf("[loadGlobalConfig] --save-path flag detected, value: '%s'", savePathFlag)
 		flags.SavePath = &savePathFlag
+	} else {
+		log.Debugf("[loadGlobalConfig] --save-path flag not detected or is default empty string.")
 	}
-	if cmd.PersistentFlags().Changed("api-delay") {
+
+	// API Delay (Default: -1)
+	if apiDelayFlag != -1 { // Check if it's not the default -1
+		log.Debugf("[loadGlobalConfig] --api-delay flag detected, value: %d", apiDelayFlag)
 		flags.APIDelayMs = &apiDelayFlag
+	} else {
+		log.Debugf("[loadGlobalConfig] --api-delay flag not detected or is default -1.")
 	}
-	if cmd.PersistentFlags().Changed("api-timeout") {
+
+	// API Timeout (Default: -1)
+	if apiTimeoutFlag != -1 { // Check if it's not the default -1
+		log.Debugf("[loadGlobalConfig] --api-timeout flag detected, value: %d", apiTimeoutFlag)
 		flags.APIClientTimeoutSec = &apiTimeoutFlag
+	} else {
+		log.Debugf("[loadGlobalConfig] --api-timeout flag not detected or is default -1.")
 	}
-	if cmd.PersistentFlags().Changed("bleve-index-path") {
+
+	// Bleve Index Path (Default: "")
+	if bleveIndexPathFlag != "" { // Check if it's not the default empty string
+		log.Debugf("[loadGlobalConfig] --bleve-index-path flag detected, value: '%s'", bleveIndexPathFlag)
 		flags.BleveIndexPath = &bleveIndexPathFlag
+	} else {
+		log.Debugf("[loadGlobalConfig] --bleve-index-path flag not detected or is default empty string.")
 	}
 
 	// --- Populate CliFlags from relevant Local Flags of the current command ---
-	// Check the command name and populate the corresponding nested CliFlags struct
+	// This part needs the .Changed() check because local flags aren't processed until
+	// the specific command is identified by Cobra.
 	if cmd.Name() == "download" {
 		flags.Download = &config.CliDownloadFlags{}
 		if cmd.Flags().Changed("concurrency") {
@@ -231,7 +250,7 @@ func loadGlobalConfig(cmd *cobra.Command, args []string) error {
 		}
 		if cmd.Flags().Changed("nsfw") {
 			flags.Images.Nsfw = &imagesNsfwFlag
-		}
+		} // Note: Type mismatch String vs Bool
 		if cmd.Flags().Changed("sort") {
 			flags.Images.Sort = &imagesSortFlag
 		}
@@ -308,71 +327,79 @@ func loadGlobalConfig(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// --- Initialize Configuration ---
+	// --- Call Initialize ---
 	cfg, transport, err := config.Initialize(flags)
 	if err != nil {
-		// Log the error and return it to cobra for handling
-		log.WithError(err).Errorf("Failed to initialize configuration")
-		return fmt.Errorf("failed to initialize configuration: %w", err)
+		log.Errorf("Failed to initialize configuration: %v", err)
+		return err
 	}
 
-	// --- Assign to Global Variables ---
+	// --- Assign the returned config and transport to globals ---
 	globalConfig = cfg
 	globalHttpTransport = transport
 
-	// --- Final Logging Configuration (Optional Re-config) ---
-	// Re-configure logging using the *final* loaded configuration from file/defaults/flags
-	// This ensures config file values for logging take precedence if flags weren't set.
+	// --- Reconfigure Logging (using final config) ---
 	log.Debug("Re-configuring logging based on final loaded configuration...")
-	configureLogging(&globalConfig) // Use the existing function that takes the config struct
+	configureLogging(&cfg)
 
-	log.Debugf("Global configuration loaded: %+v", globalConfig) // Log loaded config for debugging
+	// --- Debug Logs ---
+	log.Debugf("Global configuration loaded: %+v", globalConfig)
 	log.Debugf("Global HTTP transport configured: type %T", globalHttpTransport)
 
-	return nil
+	return nil // Success
 }
 
-// configureLoggingFromFlags sets up logrus based on flag values.
-// Used for initial setup before full config is loaded.
+// configureLoggingFromFlags sets up initial logging based *only* on flag values.
+// This is used before the full config is loaded to see early debug messages.
 func configureLoggingFromFlags(levelStr, formatStr string) {
 	level, err := log.ParseLevel(levelStr)
 	if err != nil {
-		log.WithError(err).Warnf("Invalid log level flag '%s', using default 'info' for initial logging", levelStr)
+		log.Warnf("Invalid log level '%s' from flag, using default 'info'. Error: %v", levelStr, err)
 		level = log.InfoLevel
 	}
+
 	log.SetLevel(level)
 
 	switch formatStr {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
 	case "text":
-		log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp: true,
+		})
 	default:
-		log.Warnf("Invalid log format flag '%s', using default 'text' for initial logging", formatStr)
+		log.Warnf("Invalid log format '%s' from flag, using default 'text'.", formatStr)
 		log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
 	}
-	// No need for the Info message here, the later configureLogging call handles that.
 }
 
-// configureLogging sets up logrus based on the final config values.
+// configureLogging sets up logrus based on the final loaded configuration.
 func configureLogging(cfg *models.Config) {
+	if cfg == nil {
+		log.Error("configureLogging called with nil config")
+		return
+	}
 	log.Debugf("[configureLogging] Received config LogLevel: '%s'", cfg.LogLevel)
+
 	level, err := log.ParseLevel(cfg.LogLevel)
 	if err != nil {
-		log.WithError(err).Warnf("Invalid log level '%s' in config, using default 'info'", cfg.LogLevel)
+		log.Warnf("Invalid log level '%s' in config, using default 'info'. Error: %v", cfg.LogLevel, err)
 		level = log.InfoLevel
 	}
+
 	log.SetLevel(level)
 
 	switch cfg.LogFormat {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
 	case "text":
-		log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp: true,
+			// ForceColors:   true, // Optional: Force colors even without TTY
+		})
 	default:
-		log.Warnf("Invalid log format '%s' in config, using default 'text'", cfg.LogFormat)
+		log.Warnf("Invalid log format '%s' in config, using default 'text'.", cfg.LogFormat)
 		log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
 	}
-
-	log.Infof("Logging configured: Level=%s, Format=%s", log.GetLevel(), cfg.LogFormat)
+	log.Infof("Logging configured: Level=%s, Format=%s", level.String(), cfg.LogFormat)
 }

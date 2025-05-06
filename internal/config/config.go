@@ -131,7 +131,7 @@ func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
 		Download: models.DownloadConfig{
 			Concurrency:       4,
 			Nsfw:              true, // Default to allowing NSFW content
-			Limit:             100,
+			Limit:             0,    // Default to 0 (unlimited) for total downloads
 			MaxPages:          0,
 			Sort:              "Most Downloaded",
 			Period:            "AllTime",
@@ -196,267 +196,224 @@ func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
 		}
 	}
 
-	// --- 3. Apply Flag Overrides ---
-	// Use mergo again to overlay non-nil flag values onto the current finalCfg.
-	// Create a temporary config struct populated ONLY from non-nil flags.
-	flagOverrides := models.Config{}
-	flagOverridesSet := false // Track if any flags were actually set
+	// --- Capture SavePath before potential flag override ---
+	savePathBeforeFlags := finalCfg.SavePath
 
+	// --- 3. Apply Flag Overrides ---
+	// Directly modify finalCfg based on non-nil flags.
 	if flags.APIKey != nil {
-		flagOverrides.APIKey = *flags.APIKey
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding APIKey from flag.")
+		finalCfg.APIKey = *flags.APIKey
 	}
 	if flags.SavePath != nil {
-		flagOverrides.SavePath = *flags.SavePath
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding SavePath from flag: '%s'", *flags.SavePath)
+		finalCfg.SavePath = *flags.SavePath
 	}
 	if flags.BleveIndexPath != nil {
-		flagOverrides.BleveIndexPath = *flags.BleveIndexPath
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding BleveIndexPath from flag: '%s'", *flags.BleveIndexPath)
+		finalCfg.BleveIndexPath = *flags.BleveIndexPath
 	}
 	if flags.LogApiRequests != nil {
-		flagOverrides.LogApiRequests = *flags.LogApiRequests
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding LogApiRequests from flag: %v", *flags.LogApiRequests)
+		finalCfg.LogApiRequests = *flags.LogApiRequests
 	}
 	if flags.APIDelayMs != nil {
-		flagOverrides.APIDelayMs = *flags.APIDelayMs
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding APIDelayMs from flag: %d", *flags.APIDelayMs)
+		finalCfg.APIDelayMs = *flags.APIDelayMs
 	}
 	if flags.APIClientTimeoutSec != nil {
-		flagOverrides.APIClientTimeoutSec = *flags.APIClientTimeoutSec
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding APIClientTimeoutSec from flag: %d", *flags.APIClientTimeoutSec)
+		finalCfg.APIClientTimeoutSec = *flags.APIClientTimeoutSec
 	}
 	if flags.MaxRetries != nil {
-		flagOverrides.MaxRetries = *flags.MaxRetries
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding MaxRetries from flag: %d", *flags.MaxRetries)
+		finalCfg.MaxRetries = *flags.MaxRetries
 	}
 	if flags.InitialRetryDelayMs != nil {
-		flagOverrides.InitialRetryDelayMs = *flags.InitialRetryDelayMs
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding InitialRetryDelayMs from flag: %d", *flags.InitialRetryDelayMs)
+		finalCfg.InitialRetryDelayMs = *flags.InitialRetryDelayMs
 	}
-
 	if flags.LogLevel != nil {
-		flagOverrides.LogLevel = *flags.LogLevel
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding LogLevel from flag: '%s'", *flags.LogLevel)
+		finalCfg.LogLevel = *flags.LogLevel
 	}
 	if flags.LogFormat != nil {
-		flagOverrides.LogFormat = *flags.LogFormat
-		flagOverridesSet = true
+		log.Debugf("[Config Init] Overriding LogFormat from flag: '%s'", *flags.LogFormat)
+		finalCfg.LogFormat = *flags.LogFormat
 	}
 
+	// Apply nested Download flags directly
 	if flags.Download != nil {
-		flagOverrides.Download = models.DownloadConfig{} // Initialize nested struct
+		log.Debug("[Config Init] Applying Download flags...")
 		if flags.Download.Concurrency != nil {
-			flagOverrides.Download.Concurrency = *flags.Download.Concurrency
-			flagOverridesSet = true
+			finalCfg.Download.Concurrency = *flags.Download.Concurrency
 		}
 		if flags.Download.Tag != nil {
-			flagOverrides.Download.Tag = *flags.Download.Tag
-			flagOverridesSet = true
+			finalCfg.Download.Tag = *flags.Download.Tag
 		}
 		if flags.Download.Query != nil {
-			flagOverrides.Download.Query = *flags.Download.Query
-			flagOverridesSet = true
+			finalCfg.Download.Query = *flags.Download.Query
 		}
 		if flags.Download.ModelTypes != nil {
-			flagOverrides.Download.ModelTypes = *flags.Download.ModelTypes
-			flagOverridesSet = true
+			finalCfg.Download.ModelTypes = *flags.Download.ModelTypes
 		}
 		if flags.Download.BaseModels != nil {
-			flagOverrides.Download.BaseModels = *flags.Download.BaseModels
-			flagOverridesSet = true
+			finalCfg.Download.BaseModels = *flags.Download.BaseModels
 		}
 		if flags.Download.Username != nil {
-			flagOverrides.Download.Usernames = []string{*flags.Download.Username}
-			flagOverridesSet = true
-		} // Convert single flag string to slice
+			finalCfg.Download.Usernames = []string{*flags.Download.Username}
+		} // Wrap single username in slice
 		if flags.Download.Nsfw != nil {
-			flagOverrides.Download.Nsfw = *flags.Download.Nsfw
-			flagOverridesSet = true
+			finalCfg.Download.Nsfw = *flags.Download.Nsfw
 		}
 		if flags.Download.Limit != nil {
-			flagOverrides.Download.Limit = *flags.Download.Limit
-			flagOverridesSet = true
+			finalCfg.Download.Limit = *flags.Download.Limit
 		}
 		if flags.Download.MaxPages != nil {
-			flagOverrides.Download.MaxPages = *flags.Download.MaxPages
-			flagOverridesSet = true
+			finalCfg.Download.MaxPages = *flags.Download.MaxPages
 		}
 		if flags.Download.Sort != nil {
-			flagOverrides.Download.Sort = *flags.Download.Sort
-			flagOverridesSet = true
+			finalCfg.Download.Sort = *flags.Download.Sort
 		}
 		if flags.Download.Period != nil {
-			flagOverrides.Download.Period = *flags.Download.Period
-			flagOverridesSet = true
+			finalCfg.Download.Period = *flags.Download.Period
 		}
 		if flags.Download.ModelID != nil {
-			flagOverrides.Download.ModelID = *flags.Download.ModelID
-			flagOverridesSet = true
+			finalCfg.Download.ModelID = *flags.Download.ModelID
 		}
 		if flags.Download.ModelVersionID != nil {
-			flagOverrides.Download.ModelVersionID = *flags.Download.ModelVersionID
-			flagOverridesSet = true
+			finalCfg.Download.ModelVersionID = *flags.Download.ModelVersionID
 		}
 		if flags.Download.PrimaryOnly != nil {
-			flagOverrides.Download.PrimaryOnly = *flags.Download.PrimaryOnly
-			flagOverridesSet = true
+			finalCfg.Download.PrimaryOnly = *flags.Download.PrimaryOnly
 		}
 		if flags.Download.Pruned != nil {
-			flagOverrides.Download.Pruned = *flags.Download.Pruned
-			flagOverridesSet = true
+			finalCfg.Download.Pruned = *flags.Download.Pruned
 		}
 		if flags.Download.Fp16 != nil {
-			flagOverrides.Download.Fp16 = *flags.Download.Fp16
-			flagOverridesSet = true
+			finalCfg.Download.Fp16 = *flags.Download.Fp16
 		}
 		if flags.Download.AllVersions != nil {
-			flagOverrides.Download.AllVersions = *flags.Download.AllVersions
-			flagOverridesSet = true
+			finalCfg.Download.AllVersions = *flags.Download.AllVersions
 		}
 		if flags.Download.IgnoreBaseModels != nil {
-			flagOverrides.Download.IgnoreBaseModels = *flags.Download.IgnoreBaseModels
-			flagOverridesSet = true
+			finalCfg.Download.IgnoreBaseModels = *flags.Download.IgnoreBaseModels
 		}
 		if flags.Download.IgnoreFileNameStrings != nil {
-			flagOverrides.Download.IgnoreFileNameStrings = *flags.Download.IgnoreFileNameStrings
-			flagOverridesSet = true
+			finalCfg.Download.IgnoreFileNameStrings = *flags.Download.IgnoreFileNameStrings
 		}
 		if flags.Download.SkipConfirmation != nil {
-			flagOverrides.Download.SkipConfirmation = *flags.Download.SkipConfirmation
-			flagOverridesSet = true
+			finalCfg.Download.SkipConfirmation = *flags.Download.SkipConfirmation
 		}
 		if flags.Download.SaveMetadata != nil {
-			flagOverrides.Download.SaveMetadata = *flags.Download.SaveMetadata
-			flagOverridesSet = true
+			finalCfg.Download.SaveMetadata = *flags.Download.SaveMetadata
 		}
 		if flags.Download.SaveModelInfo != nil {
-			flagOverrides.Download.SaveModelInfo = *flags.Download.SaveModelInfo
-			flagOverridesSet = true
+			finalCfg.Download.SaveModelInfo = *flags.Download.SaveModelInfo
 		}
 		if flags.Download.SaveVersionImages != nil {
-			flagOverrides.Download.SaveVersionImages = *flags.Download.SaveVersionImages
-			flagOverridesSet = true
+			finalCfg.Download.SaveVersionImages = *flags.Download.SaveVersionImages
 		}
 		if flags.Download.SaveModelImages != nil {
-			flagOverrides.Download.SaveModelImages = *flags.Download.SaveModelImages
-			flagOverridesSet = true
+			finalCfg.Download.SaveModelImages = *flags.Download.SaveModelImages
 		}
 		if flags.Download.DownloadMetaOnly != nil {
-			flagOverrides.Download.DownloadMetaOnly = *flags.Download.DownloadMetaOnly
-			flagOverridesSet = true
+			finalCfg.Download.DownloadMetaOnly = *flags.Download.DownloadMetaOnly
 		}
 	}
 
+	// Apply nested Images flags directly
 	if flags.Images != nil {
-		flagOverrides.Images = models.ImagesConfig{}
+		log.Debug("[Config Init] Applying Images flags...")
 		if flags.Images.Limit != nil {
-			flagOverrides.Images.Limit = *flags.Images.Limit
-			flagOverridesSet = true
+			finalCfg.Images.Limit = *flags.Images.Limit
 		}
 		if flags.Images.PostID != nil {
-			flagOverrides.Images.PostID = *flags.Images.PostID
-			flagOverridesSet = true
+			finalCfg.Images.PostID = *flags.Images.PostID
 		}
 		if flags.Images.ModelID != nil {
-			flagOverrides.Images.ModelID = *flags.Images.ModelID
-			flagOverridesSet = true
+			finalCfg.Images.ModelID = *flags.Images.ModelID
 		}
 		if flags.Images.ModelVersionID != nil {
-			flagOverrides.Images.ModelVersionID = *flags.Images.ModelVersionID
-			flagOverridesSet = true
+			finalCfg.Images.ModelVersionID = *flags.Images.ModelVersionID
 		}
 		if flags.Images.Username != nil {
-			flagOverrides.Images.Username = *flags.Images.Username
-			flagOverridesSet = true
+			finalCfg.Images.Username = *flags.Images.Username
 		}
+		// Note: flags.Images.Nsfw is *string, models.ImagesConfig.Nsfw is bool. Conversion needed if used.
 		if flags.Images.Nsfw != nil {
-			flagOverrides.Images.Nsfw = *flags.Images.Nsfw
-			flagOverridesSet = true
+			log.Warnf("[Config Init] Skipping Images.Nsfw flag override due to type mismatch (string vs bool). Flag value: %s", *flags.Images.Nsfw)
 		}
 		if flags.Images.Sort != nil {
-			flagOverrides.Images.Sort = *flags.Images.Sort
-			flagOverridesSet = true
+			finalCfg.Images.Sort = *flags.Images.Sort
 		}
 		if flags.Images.Period != nil {
-			flagOverrides.Images.Period = *flags.Images.Period
-			flagOverridesSet = true
+			finalCfg.Images.Period = *flags.Images.Period
 		}
 		if flags.Images.Page != nil {
-			flagOverrides.Images.Page = *flags.Images.Page
-			flagOverridesSet = true
+			finalCfg.Images.Page = *flags.Images.Page
 		}
+		// Note: flags.Images.MaxPages ignored (no config field)
 		if flags.Images.MaxPages != nil {
-			flagOverrides.Images.MaxPages = *flags.Images.MaxPages
-			flagOverridesSet = true
+			log.Warnf("[Config Init] Images flag --max-pages ignored, no corresponding config field.")
 		}
 		if flags.Images.OutputDir != nil {
-			flagOverrides.Images.OutputDir = *flags.Images.OutputDir
-			flagOverridesSet = true
+			finalCfg.Images.OutputDir = *flags.Images.OutputDir
 		}
 		if flags.Images.Concurrency != nil {
-			flagOverrides.Images.Concurrency = *flags.Images.Concurrency
-			flagOverridesSet = true
+			finalCfg.Images.Concurrency = *flags.Images.Concurrency
 		}
 		if flags.Images.SaveMetadata != nil {
-			flagOverrides.Images.SaveMetadata = *flags.Images.SaveMetadata
-			flagOverridesSet = true
+			finalCfg.Images.SaveMetadata = *flags.Images.SaveMetadata
 		}
 	}
 
+	// Apply nested Torrent flags directly
 	if flags.Torrent != nil {
-		flagOverrides.Torrent = models.TorrentConfig{}
+		log.Debug("[Config Init] Applying Torrent flags...")
+		// Note: AnnounceURLs and ModelIDs are flags only, not stored in config struct.
 		if flags.Torrent.OutputDir != nil {
-			flagOverrides.Torrent.OutputDir = *flags.Torrent.OutputDir
-			flagOverridesSet = true
+			finalCfg.Torrent.OutputDir = *flags.Torrent.OutputDir
 		}
 		if flags.Torrent.Overwrite != nil {
-			flagOverrides.Torrent.Overwrite = *flags.Torrent.Overwrite
-			flagOverridesSet = true
+			finalCfg.Torrent.Overwrite = *flags.Torrent.Overwrite
 		}
 		if flags.Torrent.MagnetLinks != nil {
-			flagOverrides.Torrent.MagnetLinks = *flags.Torrent.MagnetLinks
-			flagOverridesSet = true
+			finalCfg.Torrent.MagnetLinks = *flags.Torrent.MagnetLinks
 		}
 		if flags.Torrent.Concurrency != nil {
-			flagOverrides.Torrent.Concurrency = *flags.Torrent.Concurrency
-			flagOverridesSet = true
+			finalCfg.Torrent.Concurrency = *flags.Torrent.Concurrency
 		}
-		// Note: AnnounceURLs and ModelIDs from flags are handled directly in the command logic, not merged here.
 	}
 
+	// Apply nested DB flags directly
 	if flags.DB != nil && flags.DB.Verify != nil {
-		flagOverrides.DB.Verify = models.DBVerifyConfig{}
+		log.Debug("[Config Init] Applying DB Verify flags...")
 		if flags.DB.Verify.CheckHash != nil {
-			flagOverrides.DB.Verify.CheckHash = *flags.DB.Verify.CheckHash
-			flagOverridesSet = true
+			finalCfg.DB.Verify.CheckHash = *flags.DB.Verify.CheckHash
 		}
 		if flags.DB.Verify.AutoRedownload != nil {
-			flagOverrides.DB.Verify.AutoRedownload = *flags.DB.Verify.AutoRedownload
-			flagOverridesSet = true
-		}
-	}
-
-	if flagOverridesSet {
-		if err := mergo.Merge(&finalCfg, flagOverrides, mergo.WithOverride); err != nil {
-			log.WithError(err).Warnf("Error merging flag values onto config")
-			// Continue with potentially partially merged config
+			finalCfg.DB.Verify.AutoRedownload = *flags.DB.Verify.AutoRedownload
 		}
 	}
 
 	// --- 4. Derive Default Paths if Empty ---
-	if finalCfg.DatabasePath == "" {
-		finalCfg.DatabasePath = filepath.Join(finalCfg.SavePath, "civitai.db")
-		log.Debugf("[Config Init] DatabasePath defaulted to: %s", finalCfg.DatabasePath)
-	}
-	if finalCfg.BleveIndexPath == "" {
-		finalCfg.BleveIndexPath = filepath.Join(finalCfg.SavePath, "civitai.bleve")
-		log.Debugf("[Config Init] BleveIndexPath defaulted to: %s (SavePath was: '%s')", finalCfg.BleveIndexPath, finalCfg.SavePath)
+	// Default paths only if they are empty OR if they were previously defaulted based on the save path *before* flag overrides.
+	defaultDbPath := filepath.Join(savePathBeforeFlags, "civitai.db")
+	if finalCfg.DatabasePath == "" || finalCfg.DatabasePath == defaultDbPath {
+		finalCfg.DatabasePath = filepath.Join(finalCfg.SavePath, "civitai.db") // Use final (potentially overridden) SavePath
+		log.Debugf("[Config Init] DatabasePath defaulted based on final SavePath: %s", finalCfg.DatabasePath)
+	} else {
+		log.Debugf("[Config Init] DatabasePath ('%s') was explicitly set or derived from a non-default SavePath, not changing.", finalCfg.DatabasePath)
 	}
 
-	// --- ADDED: Explicit Debug for Final Path --- START
-	log.Debugf("[Config Init] FINAL BleveIndexPath just before return: '%s'", finalCfg.BleveIndexPath)
-	// --- ADDED: Explicit Debug for Final Path --- END
+	defaultBlevePath := filepath.Join(savePathBeforeFlags, "civitai.bleve")
+	if finalCfg.BleveIndexPath == "" || finalCfg.BleveIndexPath == defaultBlevePath {
+		finalCfg.BleveIndexPath = filepath.Join(finalCfg.SavePath, "civitai.bleve") // Use final (potentially overridden) SavePath
+		log.Debugf("[Config Init] BleveIndexPath defaulted based on final SavePath: %s", finalCfg.BleveIndexPath)
+	} else {
+		log.Debugf("[Config Init] BleveIndexPath ('%s') was explicitly set or derived from a non-default SavePath, not changing.", finalCfg.BleveIndexPath)
+	}
 
 	// --- 5. Validation ---
 	if finalCfg.SavePath == "" {

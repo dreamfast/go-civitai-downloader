@@ -88,7 +88,7 @@ Generally arguments passed into the application will override the config file se
 | `IgnoreFileNameStrings` | `[]string` | `[]`                 | List of strings to ignore in filenames (case-insensitive substring match). (`--ignore-filename-strings` flag) |
 | `Sort`                  | `string`   | `"Most Downloaded"`  | Default sort order for API queries ("Highest Rated", "Most Downloaded", "Newest"). (`--sort` flag)      |
 | `Period`                | `string`   | `"AllTime"`          | Default time period for sorting ("AllTime", "Year", "Month", "Week", "Day"). (`--period` flag)        |
-| `Limit`                 | `int`      | `100`                | Acts as TOTAL download limit if set. (`--limit` flag)         |
+| `Limit`                 | `int`      | `0`                  | Total download limit. 0 means unlimited. (`--limit` flag)                                                   |
 | `MaxPages`              | `int`      | `0`                  | Default maximum number of API pages to fetch (0 for no limit). (`--max-pages` flag)                     |
 | `Concurrency`           | `int`      | `4`                  | Default number of concurrent downloads. (`--concurrency` flag)                                          |
 | `SaveMetadata`          | `bool`     | `true`               | Save a `.json` metadata file (containing the full version details) alongside downloads. (`--metadata` flag) |

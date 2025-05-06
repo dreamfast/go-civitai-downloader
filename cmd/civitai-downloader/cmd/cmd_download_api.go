@@ -355,19 +355,28 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 			finalBaseFilename := fmt.Sprintf("%d_%s", version.ID, helpers.ConvertToSlug(file.Name))
 			targetPath := filepath.Join(targetDir, finalBaseFilename)
 
+			// --- Ensure ModelId is set in the version struct --- START ---
+			versionForPd := version // Make a copy to modify
+			if versionForPd.ModelId == 0 && modelResponse.ID != 0 {
+				log.Debugf("Populating missing ModelId (%d) in version data (Version ID: %d) for model %d before creating potentialDownload", modelResponse.ID, versionForPd.ID, modelResponse.ID)
+				versionForPd.ModelId = modelResponse.ID
+			}
+			// --- Ensure ModelId is set in the version struct --- END ---
+
 			pd := potentialDownload{
-				ModelName:         version.Model.Name,
-				ModelType:         version.Model.Type,
+				ModelName:         modelResponse.Name, // Use parent model's name
+				ModelType:         modelResponse.Type, // Use parent model's type
+				ModelID:           modelResponse.ID,   // Explicitly use the parent modelResponse.ID
 				Creator:           modelResponse.Creator,
-				FullVersion:       versionWithoutFilesImages,
-				ModelVersionID:    version.ID,
+				FullVersion:       versionForPd, // Use the potentially corrected version struct
+				ModelVersionID:    versionForPd.ID,
 				File:              file,
 				TargetFilepath:    targetPath,
 				FinalBaseFilename: finalBaseFilename,
-				OriginalImages:    version.Images,
+				OriginalImages:    version.Images, // version.Images is fine here, as it's specific to this version iteration
 				BaseModel:         version.BaseModel,
-				Slug:              modelNameSlug,
-				VersionName:       version.Name,
+				Slug:              helpers.ConvertToSlug(modelResponse.Name), // Use parent model's name for slug
+				VersionName:       versionForPd.Name,                         // This is the version's own name
 			}
 			potentialDownloadsPage = append(potentialDownloadsPage, pd)
 		}
@@ -679,6 +688,14 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 						modelDataForPd = fullModelDetails
 					}
 
+					// --- Ensure ModelId is set in the version struct --- START
+					versionForPd := version // Make a copy to modify
+					if versionForPd.ModelId == 0 && modelDataForPd.ID != 0 {
+						log.Debugf("Populating missing ModelId (%d) in version data (Version ID: %d) before creating potentialDownload", modelDataForPd.ID, versionForPd.ID)
+						versionForPd.ModelId = modelDataForPd.ID
+					}
+					// --- Ensure ModelId is set in the version struct --- END
+
 					// Create potential download entry using the struct definition
 					pd := potentialDownload{
 						ModelID:           modelDataForPd.ID,
@@ -686,8 +703,8 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 						ModelName:         modelDataForPd.Name,
 						ModelType:         modelDataForPd.Type,
 						Creator:           modelDataForPd.Creator,
-						FullVersion:       version,
-						ModelVersionID:    version.ID,
+						FullVersion:       versionForPd, // Use the potentially corrected version struct
+						ModelVersionID:    versionForPd.ID,
 						File:              file,
 						TargetFilepath:    targetPath,
 						FinalBaseFilename: finalBaseFilename,

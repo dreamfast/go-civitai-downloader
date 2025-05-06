@@ -86,8 +86,8 @@ func init() {
 	downloadCmd.Flags().StringSliceVarP(&downloadBaseModelsFlag, "base-models", "b", []string{}, "Filter by base models (SD 1.5, SDXL 1.0, etc.)")
 	downloadCmd.Flags().StringVarP(&downloadUsernameFlag, "username", "u", "", "Filter by specific creator username")
 	downloadCmd.Flags().BoolVar(&downloadNsfwFlag, "nsfw", false, "Include NSFW models (overrides config)") // Default to false as override
-	downloadCmd.Flags().IntVarP(&downloadLimitFlag, "limit", "l", 0, "Limit the number of models to download per query page (0 uses config default)")
-	downloadCmd.Flags().IntVarP(&downloadMaxPagesFlag, "max-pages", "p", 0, "Maximum number of pages to process (0 uses config default)")
+	downloadCmd.Flags().IntVarP(&downloadLimitFlag, "limit", "l", 0, "Total number of models/files to download. 0 means unlimited. If not set, uses config value (defaulting to unlimited if also not in config).")
+	downloadCmd.Flags().IntVarP(&downloadMaxPagesFlag, "max-pages", "p", 0, "Maximum number of API pages to process (0 uses config default, which is 0 for no limit)")
 	downloadCmd.Flags().StringVar(&downloadSortFlag, "sort", "", "Sort order (newest, oldest, highest_rated, etc. - overrides config)")
 	downloadCmd.Flags().StringVar(&downloadPeriodFlag, "period", "", "Time period for sort (Day, Week, Month, Year, AllTime - overrides config)")
 	downloadCmd.Flags().IntVar(&downloadModelIDFlag, "model-id", 0, "Download only a specific model ID")
