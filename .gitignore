@@ -22,3 +22,6 @@ downloads/
 config.toml
 
 /release
+
+/docs
+_*.md
