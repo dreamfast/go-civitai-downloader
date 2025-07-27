@@ -21,6 +21,7 @@ import (
 	// "github.com/spf13/viper" // Removed Viper import
 
 	"go-civitai-download/internal/database"
+	"go-civitai-download/internal/helpers"
 	"go-civitai-download/internal/models"
 )
 
@@ -389,7 +390,7 @@ func generateTorrentFile(sourcePath string, trackers []string, outputDir string,
 	}
 
 	// --- Write Torrent File ---
-	f, err := os.Create(outPath)
+	f, err := os.Create(helpers.SanitizePath(outPath))
 	if err != nil {
 		log.WithError(err).WithField("path", outPath).Error("Error creating torrent file")
 		return "", "", "", fmt.Errorf("error creating torrent file %s: %w", outPath, err)
@@ -489,7 +490,7 @@ func generateTorrentFile(sourcePath string, trackers []string, outputDir string,
 
 // writeMagnetFile writes the magnet URI string to the specified file path.
 func writeMagnetFile(filePath string, magnetURI string) error {
-	f, err := os.Create(filePath)
+	f, err := os.Create(helpers.SanitizePath(filePath))
 	if err != nil {
 		return fmt.Errorf("error creating magnet file %s: %w", filePath, err)
 	}

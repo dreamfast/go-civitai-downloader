@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"go-civitai-download/internal/helpers"
 	"io"
 	"net/http"
 	"net/http/httputil"
@@ -32,9 +33,11 @@ type LoggingTransport struct {
 // NewLoggingTransport creates a new LoggingTransport.
 // It opens the specified log file for appending.
 func NewLoggingTransport(transport http.RoundTripper, logFilePath string) (*LoggingTransport, error) {
-	f, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	safeLogFilePath := helpers.SanitizePath(logFilePath)
+	// #nosec G304
+	f, err := os.OpenFile(safeLogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open API log file %s: %w", logFilePath, err)
+		return nil, fmt.Errorf("failed to open API log file %s: %w", safeLogFilePath, err)
 	}
 
 	// Use default transport if none provided

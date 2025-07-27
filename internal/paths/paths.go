@@ -28,7 +28,7 @@ var tagRegex = regexp.MustCompile(`\{([^}]+)\}`)
 // It returns the generated relative path string or an error if substitution fails.
 func GeneratePath(pattern string, data map[string]string) (string, error) {
 	generatedPath := pattern
-	missingTags := []string{}
+	var missingTags []string
 
 	// Find all tags in the pattern
 	matches := tagRegex.FindAllStringSubmatch(pattern, -1)

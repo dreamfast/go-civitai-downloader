@@ -264,7 +264,7 @@ func runImages(cmd *cobra.Command, args []string) {
 
 	finalBaseTargetDir := targetDir
 	log.Infof("Preparing to download images to base directory: %s", finalBaseTargetDir)
-	if err := os.MkdirAll(finalBaseTargetDir, 0755); err != nil {
+	if err := os.MkdirAll(finalBaseTargetDir, 0750); err != nil {
 		log.Fatalf("Failed to create base target directory %s: %v", finalBaseTargetDir, err)
 	}
 

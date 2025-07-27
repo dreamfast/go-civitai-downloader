@@ -638,9 +638,8 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 		log.Infof("--- Fetching Model Page %d (Cursor: %s) ---", pageCount, nextCursor)
 
 		// Make the API call using the client's method
-				// Make the API call using the client's method
-				// Make the API call using the client's method
-		nextCursor, response, err = apiClient.GetModels(nextCursor, queryParams)
+		var newCursor string
+		newCursor, response, err = apiClient.GetModels(nextCursor, queryParams)
 		if err != nil {
 			// Handle specific error types from the client
 			if errors.Is(err, api.ErrRateLimited) {
@@ -654,7 +653,7 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 		}
 
 		// Assign the next cursor *before* the early exit check potentially clears it
-		nextCursor = response.Metadata.NextCursor
+		nextCursor = newCursor
 
 		log.Debugf("Received %d models for page %d", len(response.Items), pageCount)
 

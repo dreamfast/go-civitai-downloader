@@ -313,11 +313,6 @@ func ConstructApiUrl(params QueryParameters) string {
 		values.Set("limit", strconv.Itoa(params.Limit))
 	}
 
-	if params.Page > 0 { // Page is only relevant for non-cursor pagination (less common now)
-		// values.Set("page", strconv.Itoa(params.Page))
-		// Generally, Cursor should be preferred over Page.
-	}
-
 	if params.Query != "" {
 		values.Set("query", params.Query)
 	}

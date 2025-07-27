@@ -164,7 +164,7 @@ func ConvertToSlug(str string) string {
 // Uses standard directory permissions (0700).
 func CheckAndMakeDir(dir string) bool {
 	// Use MkdirAll to create parent directories if they don't exist
-	err := os.MkdirAll(dir, 0700)
+	err := os.MkdirAll(SanitizePath(dir), 0700)
 	if err != nil {
 		log.WithError(err).Errorf("Error creating directory %s", dir) // Use logrus
 		return false
@@ -186,7 +186,7 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 		"image/webp": ".webp",
 	}
 
-	fRead, errRead := os.Open(tempFilePath)
+	fRead, errRead := os.Open(SanitizePath(tempFilePath))
 	if errRead != nil {
 		log.WithError(errRead).Warnf("Could not open file %s for MIME type detection, using original extension.", tempFilePath)
 		// Return original path, don't treat this as a fatal error for the caller
@@ -237,7 +237,7 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 
 // -- Hashing Helper --
 func calculateHash(filePath string, hashAlgo hash.Hash) (string, error) {
-	file, err := os.Open(filePath)
+	file, err := os.Open(SanitizePath(filePath))
 	if err != nil {
 		return "", fmt.Errorf("opening file %s for hashing: %w", filePath, err)
 	}
@@ -276,4 +276,33 @@ func StringSliceContains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// SanitizePath cleans a file path to prevent directory traversal.
+// It removes ".." and ensures the path is relative.
+func SanitizePath(path string) string {
+	// Clean the path to resolve any ".." elements.
+	cleaned := filepath.Clean(path)
+
+	// Remove any leading slashes to ensure it's a relative path.
+	trimmed := strings.TrimLeft(cleaned, `\/`)
+
+	// As a final safety measure, split the path and remove any remaining ".." parts.
+	// This is belt-and-suspenders after filepath.Clean, but adds extra security.
+	parts := strings.Split(trimmed, string(filepath.Separator))
+	safeParts := []string{}
+	for _, part := range parts {
+		if part != ".." {
+			safeParts = append(safeParts, part)
+		}
+	}
+
+	// Join the safe parts back together.
+	safePath := filepath.Join(safeParts...)
+
+	if safePath != trimmed {
+		log.Warnf("Path sanitization changed '%s' to '%s'", path, safePath)
+	}
+
+	return safePath
 }
