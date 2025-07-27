@@ -26,3 +26,4 @@ config.toml
 /docs
 _*.md
 .cursor
+GEMINI.md
