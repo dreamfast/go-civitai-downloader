@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	index "go-civitai-download/index"
 	"go-civitai-download/internal/api"
 	"go-civitai-download/internal/database"
 	"go-civitai-download/internal/downloader"
@@ -15,7 +14,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blevesearch/bleve/v2"
 	"github.com/gosuri/uilive"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -175,7 +173,7 @@ func setupDownloadEnvironment(cfg *models.Config) (db *database.DB, fileDownload
 // handleMetadataOnlyMode processes downloads when only metadata/images are requested.
 // It now returns bool indicating if the program should exit, and requires imageDownloader.
 func handleMetadataOnlyMode(downloadsToQueue []potentialDownload, cfg *models.Config, imageDownloader *downloader.Downloader) (shouldExit bool) {
-	log.Info("--- Metadata-Only Mode Activated --- ")
+	log.Info("--- Metadata-Only Mode Activated ---")
 	if len(downloadsToQueue) == 0 {
 		log.Info("No new files found for which to save metadata.")
 		return true // Exit cleanly
@@ -208,7 +206,7 @@ func handleMetadataOnlyMode(downloadsToQueue []potentialDownload, cfg *models.Co
 		// --- End Ensure Directory Exists ---
 
 		// Save Metadata JSON
-		err := saveMetadataFile(pd, finalPathForMeta)
+		err := saveVersionMetadataFile(pd, finalPathForMeta)
 		if err != nil {
 			log.Warnf("Failed to save metadata for %s (VersionID: %d): %v", pd.File.Name, pd.ModelVersionID, err)
 			failedCount++
@@ -334,16 +332,21 @@ func confirmParameters(cmd *cobra.Command, cfg *models.Config, queryParams model
 		"ApiClientTimeoutSec":   cfg.APIClientTimeoutSec,
 		"ApiDelayMs":            cfg.APIDelayMs,
 		"ApiKeySet":             cfg.APIKey != "",
-		"BleveIndexPath":        cfg.BleveIndexPath,
 		"Concurrency":           cfg.Download.Concurrency,
 		"DatabasePath":          cfg.DatabasePath,
 		"DownloadAllVersions":   cfg.Download.AllVersions,
+		"DownloadMetaOnly":      cfg.Download.DownloadMetaOnly,
 		"Fp16":                  cfg.Download.Fp16,
 		"IgnoreBaseModels":      cfg.Download.IgnoreBaseModels,
 		"IgnoreFileNameStrings": cfg.Download.IgnoreFileNameStrings,
+		"InitialRetryDelayMs":   cfg.InitialRetryDelayMs,
 		"LogApiRequests":        cfg.LogApiRequests,
+		"LogFormat":             cfg.LogFormat,
+		"LogLevel":              cfg.LogLevel,
 		"MaxPages":              cfg.Download.MaxPages,
+		"MaxRetries":            cfg.MaxRetries,
 		"ModelID":               cfg.Download.ModelID,
+		"ModelInfoPathPattern":  cfg.Download.ModelInfoPathPattern,
 		"ModelVersionID":        cfg.Download.ModelVersionID,
 		"Nsfw":                  cfg.Download.Nsfw,
 		"PrimaryOnly":           cfg.Download.PrimaryOnly,
@@ -354,6 +357,7 @@ func confirmParameters(cmd *cobra.Command, cfg *models.Config, queryParams model
 		"SavePath":              cfg.SavePath,
 		"SaveVersionImages":     cfg.Download.SaveVersionImages,
 		"SkipConfirmation":      cfg.Download.SkipConfirmation,
+		"VersionPathPattern":    cfg.Download.VersionPathPattern,
 	}
 
 	settingsJSON, _ := json.MarshalIndent(settingsSummary, "", "  ")
@@ -416,7 +420,7 @@ func confirmParameters(cmd *cobra.Command, cfg *models.Config, queryParams model
 
 // executeDownloads manages the download worker pool and progress display.
 // It now receives the globalConfig.
-func executeDownloads(downloadsToQueue []potentialDownload, db *database.DB, fileDownloader *downloader.Downloader, imageDownloader *downloader.Downloader, cfg *models.Config, bleveIndex bleve.Index) {
+func executeDownloads(downloadsToQueue []potentialDownload, db *database.DB, fileDownloader *downloader.Downloader, imageDownloader *downloader.Downloader, cfg *models.Config) {
 	var wg sync.WaitGroup
 	// Change channel type to downloadJob
 	jobQueue := make(chan downloadJob, len(downloadsToQueue))
@@ -430,14 +434,14 @@ func executeDownloads(downloadsToQueue []potentialDownload, db *database.DB, fil
 
 	// --- Progress Display Setup ---
 	writer := uilive.New()
-	writer.Start()      // Start the live writer
+	writer.Start()
 	defer writer.Stop() // Ensure writer stops
 
 	// Start workers - Pass writer and totalCount, remove results/status channels, ADD CFG
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		// Pass cfg to the worker
-		go downloadWorker(i+1, jobQueue, db, fileDownloader, imageDownloader, &wg, writer, totalCount, bleveIndex, cfg)
+		go downloadWorker(i+1, jobQueue, db, fileDownloader, imageDownloader, &wg, writer, totalCount, cfg)
 	}
 
 	// Queue downloads as downloadJob structs
@@ -531,20 +535,6 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		return nil // Exit if user cancels or if --show-config was used
 	}
 
-	// --- Bleve Index Setup ---
-	bleveIndex, err := index.OpenOrCreateIndex(cfg.BleveIndexPath) // Use path from config
-	if err != nil {
-		log.WithError(err).Error("Failed to open or create Bleve index. Search indexing will be disabled.")
-		bleveIndex = nil
-	}
-	if bleveIndex != nil {
-		defer func() {
-			if err := bleveIndex.Close(); err != nil {
-				log.WithError(err).Error("Error closing Bleve index")
-			}
-		}()
-	}
-
 	// --- Fetch Models and Determine Downloads ---
 	log.Info("Fetching model information from Civitai API...")
 
@@ -566,7 +556,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	} else {
 		log.Info("Processing models based on general query parameters.")
 		// Existing general fetch logic
-		downloadsToQueue, fetchErr = fetchAndProcessModels(apiClient, db, queryParams, &cfg, bleveIndex)
+		downloadsToQueue, fetchErr = fetchAndProcessModels(apiClient, db, queryParams, &cfg)
 	}
 
 	if fetchErr != nil {
@@ -606,7 +596,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- Execute Downloads ---
-	executeDownloads(downloadsToQueue, db, fileDownloader, imageDownloader, &cfg, bleveIndex)
+	executeDownloads(downloadsToQueue, db, fileDownloader, imageDownloader, &cfg)
 
 	log.Info("Download command finished.")
 	return nil

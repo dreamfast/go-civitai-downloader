@@ -43,5 +43,5 @@ func init() {
 
 	// Hidden flag for testing API URL generation
 	imagesCmd.Flags().Bool("debug-print-api-url", false, "Print the constructed API URL for image fetching and exit")
-	imagesCmd.Flags().MarkHidden("debug-print-api-url") // Hide from help output
+	_ = imagesCmd.Flags().MarkHidden("debug-print-api-url") // Hide from help output
 }

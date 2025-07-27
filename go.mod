@@ -6,7 +6,6 @@ toolchain go1.24.2
 
 require (
 	git.mills.io/prologic/bitcask v1.0.2
-	github.com/BurntSushi/toml v1.3.2
 	github.com/anacrolix/torrent v1.58.1
 	github.com/blevesearch/bleve/v2 v2.5.0
 	github.com/gosuri/uilive v0.0.4
@@ -18,7 +17,6 @@ require (
 )
 
 require (
-	dario.cat/mergo v1.0.1 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.4.5 // indirect
 	github.com/abcum/lcp v0.0.0-20201209214815-7a3f3840be81 // indirect
 	github.com/anacrolix/generics v0.0.3-0.20240902042256-7fb2702ef0ca // indirect

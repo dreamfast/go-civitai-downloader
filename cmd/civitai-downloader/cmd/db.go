@@ -23,8 +23,8 @@ import (
 
 // Package-level variables for db verify flags
 var (
-	dbVerifyCheckHashFlag bool
-	dbVerifyYesFlag       bool
+	DbVerifyCheckHashFlag bool
+	DbVerifyYesFlag       bool
 )
 
 // dbCmd represents the base command for database operations
@@ -83,9 +83,9 @@ func init() {
 	// dbViewCmd.Flags().StringP("filter", "f", "", "Filter results (e.g., by model name)")
 
 	// Add flags specific to db verify
-	// Link to package-level variables
-	dbVerifyCmd.Flags().BoolVar(&dbVerifyCheckHashFlag, "check-hash", true, "Perform hash check for existing files")
-	dbVerifyCmd.Flags().BoolVarP(&dbVerifyYesFlag, "yes", "y", false, "Automatically attempt to redownload missing/mismatched files without prompting")
+	// These flags will be used by config.Initialize to populate globalConfig.DB.Verify
+	dbVerifyCmd.Flags().BoolVar(&DbVerifyCheckHashFlag, "check-hash", true, "Perform hash check for existing files")
+	dbVerifyCmd.Flags().BoolVarP(&DbVerifyYesFlag, "yes", "y", false, "Automatically attempt to redownload missing/mismatched files without prompting")
 
 	// Add flags specific to db redownload if needed (e.g., force overwrite without hash check?)
 	// dbRedownloadCmd.Flags().Bool("force", false, "Force redownload even if file exists and hash matches")

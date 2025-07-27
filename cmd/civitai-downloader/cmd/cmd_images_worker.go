@@ -11,12 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	index "go-civitai-download/index"
 	"go-civitai-download/internal/downloader"
 	"go-civitai-download/internal/helpers"
 	"go-civitai-download/internal/models"
 
-	"github.com/blevesearch/bleve/v2"
 	"github.com/gosuri/uilive"
 	log "github.com/sirupsen/logrus"
 )
@@ -51,7 +49,7 @@ func saveMetadataJSON(id int, job imageJob, targetPath string, writer *uilive.Wr
 
 // imageDownloadWorker handles the download of a single image.
 // Added baseOutputDir and bleveIndex parameters.
-func imageDownloadWorker(id int, jobs <-chan imageJob, downloader *downloader.Downloader, wg *sync.WaitGroup, writer *uilive.Writer, successCounter *int64, failureCounter *int64, saveMeta bool, baseOutputDir string, bleveIndex bleve.Index) {
+func imageDownloadWorker(id int, jobs <-chan imageJob, downloader *downloader.Downloader, wg *sync.WaitGroup, writer *uilive.Writer, successCounter *int64, failureCounter *int64, saveMeta bool, baseOutputDir string) {
 	defer wg.Done()
 	log.Debugf("Image Worker %d starting", id)
 	for job := range jobs {
@@ -150,34 +148,6 @@ func imageDownloadWorker(id int, jobs <-chan imageJob, downloader *downloader.Do
 				saveMetadataJSON(id, job, targetPath, writer) // Call helper to save
 			}
 			// --- End Save Metadata ---
-
-			// --- Index Item with Bleve --- START ---
-			if bleveIndex != nil {
-				// Extract data from meta with type assertions - META NOT AVAILABLE ON ImageApiItem
-				var tags []string = nil   // Default to nil
-				var prompt string = ""    // Default to empty
-				var modelName string = "" // Default to empty
-
-				itemToIndex := index.Item{
-					ID:          fmt.Sprintf("img_%d", job.ImageID),
-					Type:        "image",
-					Name:        baseFilename, // Use the calculated filename
-					Description: prompt,       // Use extracted prompt as description (will be empty)
-					FilePath:    targetPath,
-					ModelName:   modelName,     // Use extracted model name if found (will be empty)
-					BaseModel:   baseModelSlug, // Use the derived fallback slug
-					CreatorName: authorSlug,    // Use the derived fallback slug
-					Tags:        tags,          // Use extracted tags (will be nil)
-					Prompt:      prompt,        // Will be empty
-					// NsfwLevel:   job.Metadata.NsfwLevel, // NSFW Level not available
-				}
-				if indexErr := index.IndexItem(bleveIndex, itemToIndex); indexErr != nil {
-					log.WithError(indexErr).Errorf("Worker %d: Failed to index downloaded image %s (ID: %s)", id, targetPath, itemToIndex.ID)
-				} else {
-					log.Debugf("Worker %d: Successfully indexed image %s (ID: %s)", id, targetPath, itemToIndex.ID)
-				}
-			}
-			// --- Index Item with Bleve --- END ---
 		}
 	}
 	log.Debugf("Image Worker %d finished", id)

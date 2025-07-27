@@ -16,10 +16,6 @@ SavePath = "downloads"
 # If empty, defaults to "[SavePath]/civitai.db".
 DatabasePath = "civitai.db"
 
-# Path to the Bleve search index directory. Used by the 'search' command.
-# If empty, defaults to "[SavePath]/civitai.bleve".
-BleveIndexPath = ""
-
 # Delay in milliseconds between consecutive API calls (helps avoid rate limiting).
 ApiDelayMs = 200
 
@@ -96,18 +92,32 @@ Concurrency = 4
 # Save a .json file containing model version metadata alongside each downloaded file. Corresponds to --metadata flag.
 # Default is true.
 SaveMetadata = true
-# Save a full model info JSON (including all versions) to '[SavePath]/[Type]/[ModelSlug]/'. Corresponds to --model-info flag.
+# Save a full model info JSON (including all versions) to a path derived from ModelInfoPathPattern. Corresponds to --model-info flag.
 # Default is true.
 ModelInfo = true
-# Download preview images associated with the specific downloaded model version. Saves to '[SavePath]/[Type]/[ModelSlug]/[VersionID]/images/'. Corresponds to --version-images flag.
+# Download preview images associated with the specific downloaded model version. Saves to a path derived from VersionPathPattern (plus '/images'). Corresponds to --version-images flag.
 # Default is false.
 VersionImages = true
-# When SaveModelInfo is true, also download all images for *all* versions of the model. Saves to '[SavePath]/[Type]/[ModelSlug]/images/'. Corresponds to --model-images flag.
+# When SaveModelInfo is true, also download all images for *all* versions of the model. Saves to a path derived from ModelInfoPathPattern (plus '/images'). Corresponds to --model-images flag.
 ModelImages = false # Default is false. TOML key is "ModelImages".
 # Only download and save metadata/image files, skip actual model file download. Corresponds to --meta-only flag.
 MetaOnly = false # TOML key is "MetaOnly".
 # Skip the confirmation prompt before starting downloads. Corresponds to -y flag.
 SkipConfirmation = false
+
+# --- Path Structure ---
+# Define the directory structure for downloaded model versions.
+# Available placeholders: {modelId}, {modelName}, {modelType}, {creatorName}, {versionId}, {versionName}, {baseModel}
+# Values are automatically slugified (e.g., "My Model Name" becomes "my-model-name").
+# The final filename for the model file will be "{versionId}_{originalFilenameSlugified}" appended to this path.
+VersionPathPattern = "{modelType}/{baseModel}/{modelId}-{modelName}/{versionId}-{versionName}"
+
+# Define the directory structure for model-specific information (model.json, and model images if ModelImages=true).
+# Available placeholders: {modelId}, {modelName}, {modelType}, {creatorName}
+# Values are automatically slugified.
+# Note: If you want the downloads organised properly make sure this value matches the base path of the above
+# otherwise you will have model information and the versions in different folders
+ModelInfoPathPattern = "{modelType}/{baseModel}/{modelId}-{modelName}"
 
 
 # --- Images Command Settings ---

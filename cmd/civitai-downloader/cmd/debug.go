@@ -32,17 +32,18 @@ func init() {
 	// Flags for 'debug print-api-url images' (mirroring images.go/cmd_images_setup.go)
 	addImagesFlags(debugPrintApiUrlImagesCmd)
 
-	// Add flags to 'debug show-config' as well to allow testing overrides
-	// Note: This adds *all* flags, even if only some are relevant to a specific command context
-	// being simulated. This is acceptable for testing.
-	// addDownloadFlags(debugShowConfigCmd)
-	// addImagesFlags(debugShowConfigCmd)
+	// DO NOT add flags to debugShowConfigCmd here. This caused "flag redefined" panics.
+	// Its flag processing for overrides will be handled by loadGlobalConfig logic
+	// by checking the global flag variables if Cobra populates them based on args passed for 'debug show-config'.
+	// addDownloadFlags(debugShowConfigCmd) // Keep this commented
+	// addImagesFlags(debugShowConfigCmd)    // Keep this commented
 }
 
 var debugCmd = &cobra.Command{
 	Use:   "debug",
 	Short: "Debugging utilities (not for general use)",
 	Long:  `Contains helper commands for debugging application behavior, like inspecting configuration or API URLs.`,
+	// PersistentPreRunE: loadGlobalConfig, // Relies on rootCmd's PersistentPreRunE
 }
 
 // --- debug show-config ---
@@ -53,7 +54,7 @@ var debugShowConfigCmd = &cobra.Command{
 	Long: `Loads configuration via flags and config file (respecting precedence)
 and prints the final resulting configuration struct to stdout as JSON.
 Useful for verifying how settings are merged.`,
-	PersistentPreRunE: loadGlobalConfig, // Ensure config is loaded
+	// PersistentPreRunE: loadGlobalConfig, // Relies on rootCmd's PersistentPreRunE
 	Run: func(cmd *cobra.Command, args []string) {
 		// globalConfig is populated by PersistentPreRunE
 		jsonBytes, err := json.MarshalIndent(globalConfig, "", "  ")
@@ -72,14 +73,15 @@ var debugPrintApiUrlCmd = &cobra.Command{
 	Short: "Print the API URL that would be used by a command",
 	Long: `Constructs and prints the API URL based on loaded configuration and flags,
 similar to the old --debug-print-api-url flag. Choose a subcommand (download|images).`,
+	// PersistentPreRunE: loadGlobalConfig, // Relies on rootCmd's PersistentPreRunE
 	// No Run function needed here, subcommands handle it.
 	// PersistentPreRunE is inherited.
 }
 
 var debugPrintApiUrlDownloadCmd = &cobra.Command{
-	Use:               "download",
-	Short:             "Print the API URL for the download command",
-	PersistentPreRunE: loadGlobalConfig, // Ensure config is loaded
+	Use:   "download",
+	Short: "Print the API URL for the download command",
+	// PersistentPreRunE: loadGlobalConfig, // Relies on rootCmd's PersistentPreRunE
 	Run: func(cmd *cobra.Command, args []string) {
 		// globalConfig is populated
 		// Call the exported helper function from cmd_download_api.go
@@ -95,9 +97,9 @@ var debugPrintApiUrlDownloadCmd = &cobra.Command{
 }
 
 var debugPrintApiUrlImagesCmd = &cobra.Command{
-	Use:               "images",
-	Short:             "Print the API URL for the images command",
-	PersistentPreRunE: loadGlobalConfig, // Ensure config is loaded
+	Use:   "images",
+	Short: "Print the API URL for the images command",
+	// PersistentPreRunE: loadGlobalConfig, // Relies on rootCmd's PersistentPreRunE
 	Run: func(cmd *cobra.Command, args []string) {
 		// globalConfig is populated
 		// Call the exported helper function from cmd_images_run.go
@@ -105,7 +107,7 @@ var debugPrintApiUrlImagesCmd = &cobra.Command{
 		baseURL := api.CivitaiApiBaseUrl + "/images" // Use exported base URL + path
 
 		// Construct the URL using the exported helper and Sprintf
-		urlValues := api.ConvertQueryParamsToURLValues(queryParams)
+		urlValues := api.ConvertImageAPIParamsToURLValues(queryParams)
 		fullURL := fmt.Sprintf("%s?%s", baseURL, urlValues.Encode())
 
 		fmt.Println(fullURL)

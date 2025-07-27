@@ -16,8 +16,8 @@ import (
 	"go-civitai-download/internal/downloader"
 	"go-civitai-download/internal/helpers"
 	"go-civitai-download/internal/models"
+	"go-civitai-download/internal/paths"
 
-	"github.com/blevesearch/bleve/v2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -113,7 +113,7 @@ func doRequestWithRetry(client *http.Client, req *http.Request, cfg *models.Conf
 				errMsg = fmt.Sprintf("[%s] request failed with non-retryable status %s on attempt %d", logPrefix, resp.Status, attempt+1)
 			}
 			errMsg += fmt.Sprintf(". Body: %s", bodySample)
-			return resp, bodyBytes, fmt.Errorf(errMsg)
+			return resp, bodyBytes, errors.New(errMsg)
 		}
 	} // End of retry loop
 
@@ -170,6 +170,40 @@ func passesFileFilters(file models.File, modelType string, cfg *models.Config) b
 	return true
 }
 
+// Helper to build data map for path generation
+func buildPathData(model *models.Model, version *models.ModelVersion, file *models.File) map[string]string {
+	data := map[string]string{}
+	if model != nil {
+		data["modelId"] = strconv.Itoa(model.ID)
+		data["modelName"] = model.Name
+		data["modelType"] = model.Type
+		data["creatorName"] = model.Creator.Username // Assuming Creator is populated
+	}
+	if version != nil {
+		data["versionId"] = strconv.Itoa(version.ID)
+		data["versionName"] = version.Name
+		data["baseModel"] = version.BaseModel
+		if data["modelId"] == "" || data["modelId"] == "0" { // Populate from version if model data was minimal
+			data["modelId"] = strconv.Itoa(version.ModelId)
+		}
+		// If top-level model data wasn't available (e.g., single version call), use version's model info
+		if data["modelName"] == "" {
+			data["modelName"] = version.Model.Name
+		}
+		if data["modelType"] == "" {
+			data["modelType"] = version.Model.Type
+		}
+	}
+	// Could add file-specific tags later if needed, like {fileId}, {fileName}
+
+	// Ensure creator is never empty if possible (fallback needed?)
+	if data["creatorName"] == "" {
+		data["creatorName"] = "unknown_creator"
+	}
+
+	return data
+}
+
 // handleSingleVersionDownload Fetches details for a specific model version ID and processes it for download.
 // Now uses the passed config struct and api.Client.
 func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.Client, cfg *models.Config) ([]potentialDownload, uint64, error) {
@@ -197,7 +231,7 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 			}
 			finalErrMsg += fmt.Sprintf(". Last Body: %s", bodySample)
 		}
-		return nil, 0, fmt.Errorf(finalErrMsg)
+		return nil, 0, errors.New(finalErrMsg)
 	}
 
 	var versionResponse models.ModelVersion
@@ -214,48 +248,49 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 	versionWithoutFilesImages.Files = nil
 	versionWithoutFilesImages.Images = nil
 
+	// Create a pseudo-Model struct for path data generation, as we only have version data here
+	pseudoModel := models.Model{
+		ID:   versionResponse.ModelId, // Use ModelId from version
+		Name: versionResponse.Model.Name,
+		Type: versionResponse.Model.Type,
+		// Creator is missing here, buildPathData will use fallback
+	}
+
 	for _, file := range versionResponse.Files {
-		// Pass config to filter function
-		if !passesFileFilters(file, versionResponse.Model.Type, cfg) {
+		if !passesFileFilters(file, pseudoModel.Type, cfg) {
 			continue
 		}
 
-		// Construct the directory path using Model Type, Model Name Slug, and Version ID+Name Slug
-		modelTypeName := helpers.ConvertToSlug(versionResponse.Model.Type)
-		modelNameSlug := helpers.ConvertToSlug(versionResponse.Model.Name)
-		versionIDStr := strconv.Itoa(versionResponse.ID)
-		versionNameSlug := helpers.ConvertToSlug(versionResponse.Name)
-		versionDirSegment := fmt.Sprintf("%s-%s", versionIDStr, versionNameSlug)
-		baseModelSlug := helpers.ConvertToSlug(versionResponse.BaseModel)
-		if baseModelSlug == "" {
-			baseModelSlug = "unknown_base"
+		// --- Path Generation using pattern --- START ---
+		data := buildPathData(&pseudoModel, &versionResponse, &file)
+		relPath, err := paths.GeneratePath(cfg.Download.VersionPathPattern, data)
+		if err != nil {
+			log.WithError(err).Errorf("Failed to generate path for version %d, file %s. Skipping.", versionResponse.ID, file.Name)
+			continue
 		}
-		targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, baseModelSlug, versionDirSegment)
-		// Construct filename with version ID prefix (consistent with DB logic)
-		finalBaseFilename := fmt.Sprintf("%d_%s", versionResponse.ID, helpers.ConvertToSlug(file.Name))
-		targetPath := filepath.Join(targetDir, finalBaseFilename)
+		// --- Path Generation using pattern --- END ---
 
-		// Use placeholder for creator since full Model info isn't available here
-		placeholderCreator := models.Creator{Username: "unknown_creator"}
+		finalBaseFilename := fmt.Sprintf("%d_%s", versionResponse.ID, helpers.ConvertToSlug(file.Name))
+		targetPath := filepath.Join(cfg.SavePath, relPath, finalBaseFilename)
 
 		pd := potentialDownload{
-			ModelName:         versionResponse.Model.Name,
-			ModelType:         versionResponse.Model.Type,
-			Creator:           placeholderCreator,        // Use placeholder
-			FullVersion:       versionWithoutFilesImages, // Store version details (no files/images)
+			ModelID:           pseudoModel.ID,
+			ModelName:         pseudoModel.Name,
+			ModelType:         pseudoModel.Type,
+			Creator:           pseudoModel.Creator, // Will be fallback "unknown_creator"
+			FullVersion:       versionWithoutFilesImages,
 			ModelVersionID:    versionResponse.ID,
 			File:              file,
-			TargetFilepath:    targetPath,
+			TargetFilepath:    targetPath, // Use calculated full path
 			FinalBaseFilename: finalBaseFilename,
-			OriginalImages:    versionResponse.Images,    // Populate OriginalImages
-			BaseModel:         versionResponse.BaseModel, // Store the base model
-			Slug:              modelNameSlug,             // Store the model name slug
-			VersionName:       versionResponse.Name,      // Store the version name
+			OriginalImages:    versionResponse.Images,
+			BaseModel:         versionResponse.BaseModel,
+			Slug:              helpers.ConvertToSlug(pseudoModel.Name),
+			VersionName:       versionResponse.Name,
 		}
 		potentialDownloadsPage = append(potentialDownloadsPage, pd)
 	}
 
-	// Use the refactored filterAndPrepareDownloads function
 	processedDownloads, totalSize := filterAndPrepareDownloads(potentialDownloadsPage, db, cfg)
 	return processedDownloads, totalSize, nil
 }
@@ -275,8 +310,8 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 		req.Header.Add("Authorization", "Bearer "+cfg.APIKey)
 	}
 
-	// Use Retry Helper with config
 	_, bodyBytes, err := doRequestWithRetry(apiClient.HttpClient, req, cfg, logPrefix)
+
 	if err != nil {
 		finalErrMsg := fmt.Sprintf("failed to fetch model %d: %v", modelID, err)
 		if !strings.Contains(err.Error(), "Body:") && len(bodyBytes) > 0 {
@@ -286,7 +321,7 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 			}
 			finalErrMsg += fmt.Sprintf(". Last Body: %s", bodySample)
 		}
-		return nil, 0, fmt.Errorf(finalErrMsg)
+		return nil, 0, errors.New(finalErrMsg)
 	}
 
 	var modelResponse models.Model
@@ -295,11 +330,10 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 		return nil, 0, fmt.Errorf("failed to decode API response for model %d: %w", modelID, err)
 	}
 
-	log.Infof("Processing Model: %s (ID: %d) by %s", modelResponse.Name, modelResponse.ID, modelResponse.Creator.Username)
+	log.Infof("Successfully fetched details for model %s (ID: %d, Type: %s, Creator: %s)",
+		modelResponse.Name, modelResponse.ID, modelResponse.Type, modelResponse.Creator.Username)
 
-	// --- Process Model Info & Images if requested ---
-	modelInfoDir := filepath.Join(cfg.SavePath, "model_info", helpers.ConvertToSlug(modelResponse.Type), helpers.ConvertToSlug(modelResponse.Creator.Username), helpers.ConvertToSlug(modelResponse.Name))
-
+	// --- Model Images Processing --- START ---
 	if cfg.Download.SaveModelImages && imageDownloader != nil {
 		log.Warnf("Downloading model images for model %s (ID: %d). This may include images from multiple versions.", modelResponse.Name, modelResponse.ID)
 		// Collect all images from all versions
@@ -311,19 +345,49 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 		}
 
 		if len(allModelImages) > 0 {
-			imageCount, imageErrors := downloadImages(
-				fmt.Sprintf("Model-%d-Images", modelResponse.ID),
-				allModelImages, // Pass the collected slice of all images
-				modelInfoDir,
-				imageDownloader,
-				cfg.Download.Concurrency,
-			)
-			log.Infof("Model image download attempt finished for %s. Success: %d, Errors: %d", modelResponse.Name, imageCount, imageErrors)
+			// Save model images to potentially multiple directories if structure is basemodel_centric
+			processedImageDirs := make(map[string]bool)
+			for _, version := range modelResponse.ModelVersions {
+				data := buildPathData(&modelResponse, &version, nil) // Build data map
+
+				// If ModelInfoPathPattern (used for image base dir) uses {baseModel}, it's ambiguous.
+				// Ensure it resolves to "unknown_baseModel".
+				if strings.Contains(cfg.Download.ModelInfoPathPattern, "{baseModel}") {
+					baseModelValue, bmExists := data["baseModel"]
+					if !bmExists || strings.TrimSpace(baseModelValue) == "" {
+						data["baseModel"] = "unknown_baseModel"
+						log.Debugf("For single model image base path (model %d), {baseModel} is ambiguous or empty, setting to 'unknown_baseModel' for path generation.", modelResponse.ID)
+					}
+				}
+
+				relModelInfoDir, err := paths.GeneratePath(cfg.Download.ModelInfoPathPattern, data)
+				if err != nil {
+					log.WithError(err).Errorf("Failed to generate model image path for model %s (ID: %d) using pattern '%s'. Skipping image download for this path.", modelResponse.Name, modelResponse.ID, cfg.Download.ModelInfoPathPattern)
+					continue
+				}
+				modelImagesDirAbs := filepath.Join(cfg.SavePath, relModelInfoDir, "images")
+
+				if !processedImageDirs[modelImagesDirAbs] {
+					imgLogPrefix := fmt.Sprintf("[Model-%d-Images]", modelResponse.ID)
+					log.Infof("%s Downloading %d images for model %s to %s (derived from version %d)",
+						imgLogPrefix, len(allModelImages), modelResponse.Name, modelImagesDirAbs, version.ID)
+					imgSuccess, imgFail := downloadImages(
+						imgLogPrefix,
+						allModelImages,
+						modelImagesDirAbs,
+						imageDownloader,
+						cfg.Download.Concurrency,
+					)
+					log.Infof("%s Finished model image download for dir %s. Success: %d, Failures: %d",
+						imgLogPrefix, modelImagesDirAbs, imgSuccess, imgFail)
+					processedImageDirs[modelImagesDirAbs] = true
+				}
+			}
 		} else {
-			log.Infof("No images found to download for model %s (ID: %d)", modelResponse.Name, modelResponse.ID)
+			log.Infof("[Model-%d-Images] No images found in model details.", modelResponse.ID)
 		}
 	}
-	// --- End Model Info/Images Processing ---
+	// --- Model Images Processing --- END ---
 
 	var potentialDownloadsPage []potentialDownload
 
@@ -340,20 +404,18 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 				continue
 			}
 
-			// Construct the directory path using Model Type, Model Name Slug, and Version ID+Name Slug
-			modelTypeName := helpers.ConvertToSlug(version.Model.Type)
-			modelNameSlug := helpers.ConvertToSlug(version.Model.Name)
-			versionIDStr := strconv.Itoa(version.ID)
-			versionNameSlug := helpers.ConvertToSlug(version.Name)
-			versionDirSegment := fmt.Sprintf("%s-%s", versionIDStr, versionNameSlug)
-			baseModelSlug := helpers.ConvertToSlug(version.BaseModel)
-			if baseModelSlug == "" {
-				baseModelSlug = "unknown_base"
+			// --- Path Generation using pattern --- START ---
+			data := buildPathData(&modelResponse, &version, &file)
+			relPath, err := paths.GeneratePath(cfg.Download.VersionPathPattern, data)
+			if err != nil {
+				log.WithError(err).Errorf("Failed to generate path for model %d, version %d, file %s. Skipping.", modelResponse.ID, version.ID, file.Name)
+				continue
 			}
-			targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, baseModelSlug, versionDirSegment)
-			// Construct filename with version ID prefix (consistent with DB logic)
+			// --- Path Generation using pattern --- END ---
+
+			// Construct full target path and base filename
 			finalBaseFilename := fmt.Sprintf("%d_%s", version.ID, helpers.ConvertToSlug(file.Name))
-			targetPath := filepath.Join(targetDir, finalBaseFilename)
+			targetPath := filepath.Join(cfg.SavePath, relPath, finalBaseFilename)
 
 			// --- Ensure ModelId is set in the version struct --- START ---
 			versionForPd := version // Make a copy to modify
@@ -361,33 +423,32 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 				log.Debugf("Populating missing ModelId (%d) in version data (Version ID: %d) for model %d before creating potentialDownload", modelResponse.ID, versionForPd.ID, modelResponse.ID)
 				versionForPd.ModelId = modelResponse.ID
 			}
-			// --- Ensure ModelId is set in the version struct --- END ---
+			// --- Ensure ModelId is set in the version struct --- END
 
 			pd := potentialDownload{
-				ModelName:         modelResponse.Name, // Use parent model's name
-				ModelType:         modelResponse.Type, // Use parent model's type
-				ModelID:           modelResponse.ID,   // Explicitly use the parent modelResponse.ID
+				ModelID:           modelResponse.ID,
+				FullModel:         modelResponse,
+				ModelName:         modelResponse.Name,
+				ModelType:         modelResponse.Type,
 				Creator:           modelResponse.Creator,
-				FullVersion:       versionForPd, // Use the potentially corrected version struct
+				FullVersion:       versionForPd,
 				ModelVersionID:    versionForPd.ID,
 				File:              file,
 				TargetFilepath:    targetPath,
 				FinalBaseFilename: finalBaseFilename,
-				OriginalImages:    version.Images, // version.Images is fine here, as it's specific to this version iteration
+				OriginalImages:    version.Images,
 				BaseModel:         version.BaseModel,
-				Slug:              helpers.ConvertToSlug(modelResponse.Name), // Use parent model's name for slug
-				VersionName:       versionForPd.Name,                         // This is the version's own name
+				Slug:              helpers.ConvertToSlug(modelResponse.Name),
+				VersionName:       versionForPd.Name,
 			}
 			potentialDownloadsPage = append(potentialDownloadsPage, pd)
 		}
-		// Only process the latest version if AllVersions is false
 		if !cfg.Download.AllVersions {
 			log.Debugf("Processing only latest version for model %d, breaking version loop.", modelResponse.ID)
 			break
 		}
 	}
 
-	// Use the refactored filterAndPrepareDownloads function
 	processedDownloads, totalSize := filterAndPrepareDownloads(potentialDownloadsPage, db, cfg)
 	return processedDownloads, totalSize, nil
 }
@@ -399,99 +460,113 @@ func filterAndPrepareDownloads(potentialDownloadsPage []potentialDownload, db *d
 	var totalSizeFiltered uint64
 
 	for _, pd := range potentialDownloadsPage {
-		// --- Check Database ---
-		dbKey := fmt.Sprintf("v_%d", pd.ModelVersionID) // Key using version ID
-		shouldQueue := true                             // Assume we should queue unless DB says otherwise
+		dbKey := fmt.Sprintf("v_%d", pd.ModelVersionID)
+		shouldQueue := true
 		existingEntryBytes, errGet := db.Get([]byte(dbKey))
 
+		// --- Calculate Correct Relative Folder Path using paths helper --- START ---
+		// Rebuild necessary structs/data for path generation based on pd
+		// Note: pd.FullModel might not be fully populated if it came from a list API, but has basics.
+		// pd.FullVersion should be reliable here.
+		pseudoModelForPath := models.Model{ID: pd.ModelID, Name: pd.ModelName, Type: pd.ModelType, Creator: pd.Creator}
+		dataForPath := buildPathData(&pseudoModelForPath, &pd.FullVersion, &pd.File)
+		correctFolderRelPath, errPath := paths.GeneratePath(cfg.Download.VersionPathPattern, dataForPath)
+		if errPath != nil {
+			log.WithError(errPath).Errorf("Failed to generate DB folder path for version %d, file %s. Skipping queue.", pd.ModelVersionID, pd.File.Name)
+			continue // Skip if we can't even determine the intended folder
+		}
+		// --- Calculate Correct Relative Folder Path --- END ---
+
 		if errGet == nil {
-			// Entry exists, check its status
 			var existingEntry models.DatabaseEntry
 			if errUnmarshal := json.Unmarshal(existingEntryBytes, &existingEntry); errUnmarshal == nil {
-				// Check if the specific file within the version entry matches
 				if existingEntry.File.ID == pd.File.ID && existingEntry.File.Hashes.CRC32 == pd.File.Hashes.CRC32 {
 					if existingEntry.Status == models.StatusDownloaded {
-						// File exists and is downloaded. Only queue if we need to check images.
 						if cfg.Download.SaveVersionImages {
 							log.Debugf("      - Queuing downloaded file %s (Version %d, File %d) for image check.", pd.File.Name, pd.ModelVersionID, pd.File.ID)
-							shouldQueue = true // Queue specifically for image check
+							shouldQueue = true
 						} else {
 							log.Debugf("      - Skipping file %s (Version %d, File %d): Already marked as downloaded in DB (images not requested).", pd.File.Name, pd.ModelVersionID, pd.File.ID)
-							shouldQueue = false // Already downloaded, no image check needed
+							shouldQueue = false
 						}
 					} else {
-						// Status is Pending or Error, allow re-queue (shouldQueue remains true)
 						log.Debugf("      - Re-queuing file %s (Version %d, File %d): DB status is %s.", pd.File.Name, pd.ModelVersionID, pd.File.ID, existingEntry.Status)
+						// Correct Folder path if necessary
+						if existingEntry.Folder != correctFolderRelPath {
+							log.Debugf("      - Correcting Folder path in DB for re-queued item %s: from '%s' to '%s'", dbKey, existingEntry.Folder, correctFolderRelPath)
+							entryToUpdate := existingEntry // Make a copy to modify
+							entryToUpdate.Folder = correctFolderRelPath
+							// Also update other potentially changed fields
+							entryToUpdate.Status = models.StatusPending // Ensure status is Pending
+							entryToUpdate.ErrorDetails = ""
+							entryToUpdate.Version = pd.FullVersion
+							entryToUpdate.File = pd.File
+
+							updatedEntryBytes, marshalErr := json.Marshal(entryToUpdate)
+							if marshalErr == nil {
+								if err := db.Put([]byte(dbKey), updatedEntryBytes); err != nil {
+									log.WithError(err).Warnf("Failed to update folder path in DB for re-queued item %s", dbKey)
+								}
+							} else {
+								log.WithError(marshalErr).Warnf("Failed to marshal for folder path update for re-queued item %s", dbKey)
+							}
+						}
 					}
 				} else {
-					// File ID or hash mismatch, treat as new download for this version
 					log.Debugf("      - Queuing file %s (Version %d, File %d): File ID/Hash mismatch with DB entry.", pd.File.Name, pd.ModelVersionID, pd.File.ID)
-					// Need to create/overwrite the entry with Pending status
-					shouldQueue = true // Ensure it's queued
+					shouldQueue = true
 				}
 			} else {
 				log.WithError(errUnmarshal).Warnf("      - Failed to unmarshal existing DB entry for key %s. Re-queuing.", dbKey)
-				shouldQueue = true // Re-queue if we can't parse existing entry
+				shouldQueue = true
 			}
 		} else if errors.Is(errGet, database.ErrNotFound) {
-			// Key not found, this is a new download, create Pending entry
 			log.Debugf("      - Key %s not found in DB. Creating Pending entry.", dbKey)
 
-			// --- Calculate correct folder path (type/model) --- NEW
-			modelTypeNameSlug := helpers.ConvertToSlug(pd.ModelType)
-			modelNameSlug := pd.Slug // pd.Slug should already be the model name slug
-			folderPathPart := filepath.Join(modelTypeNameSlug, modelNameSlug)
-			// --- End Calculation ---
+			// folderPathPart is now correctFolderRelPath calculated above
+			folderPathPart := correctFolderRelPath
 
-			// Prepare the version struct to be saved
 			versionToSave := pd.FullVersion
-			// --- FIX: Ensure ModelId is populated --- START ---
-			// If the ModelId within the version struct is 0 (likely missing from list API response),
-			// use the ModelID obtained from the parent model object.
 			if versionToSave.ModelId == 0 && pd.ModelID != 0 {
 				log.Debugf("      - Populating missing ModelId (%d) in Version struct for DB save (Version ID: %d)", pd.ModelID, versionToSave.ID)
 				versionToSave.ModelId = pd.ModelID
 			}
-			// --- FIX: Ensure ModelId is populated --- END ---
 
 			newEntry := models.DatabaseEntry{
-				ModelID:      pd.ModelID, // NEW: Populate top-level ID
+				ModelID:      pd.ModelID,
 				ModelName:    pd.ModelName,
 				ModelType:    pd.ModelType,
-				Version:      versionToSave,        // UPDATED: Use the potentially corrected version struct
-				File:         pd.File,              // Store the file struct
-				Timestamp:    time.Now().Unix(),    // Use Unix timestamp for AddedAt
-				Creator:      pd.Creator,           // Store the creator struct
-				Filename:     pd.FinalBaseFilename, // Use the calculated filename
-				Folder:       folderPathPart,       // UPDATED: Use the calculated folder path
-				Status:       models.StatusPending, // Set initial status
-				ErrorDetails: "",                   // Clear error details
+				Version:      versionToSave,
+				File:         pd.File,
+				Timestamp:    time.Now().Unix(),
+				Creator:      pd.Creator,
+				Filename:     pd.FinalBaseFilename,
+				Folder:       folderPathPart, // Use the calculated relative path
+				Status:       models.StatusPending,
+				ErrorDetails: "",
 			}
 			entryBytes, marshalErr := json.Marshal(newEntry)
 			if marshalErr != nil {
 				log.WithError(marshalErr).Errorf("      - Failed to marshal NEW DB entry for key %s. Skipping queue.", dbKey)
-				shouldQueue = false // Don't queue if marshalling fails
+				shouldQueue = false
 			} else {
 				if errPut := db.Put([]byte(dbKey), entryBytes); errPut != nil {
 					log.WithError(errPut).Errorf("      - Failed to PUT new Pending DB entry for key %s. Skipping queue.", dbKey)
-					shouldQueue = false // Don't queue if DB write fails
+					shouldQueue = false
 				} else {
 					log.Debugf("      - Successfully created Pending DB entry for key %s.", dbKey)
-					// shouldQueue remains true
 				}
 			}
 		} else {
-			// Other unexpected DB error during Get
 			log.WithError(errGet).Errorf("      - Unexpected error checking database for key %s. Skipping queue.", dbKey)
 			shouldQueue = false
 		}
 
 		if !shouldQueue {
-			continue // Skip to next potential download if shouldQueue is false
+			continue
 		}
 
-		// --- Check Ignored Base Models (Only if we should queue based on DB status) ---
-		ignoredBaseModels := cfg.Download.IgnoreBaseModels // Use config
+		ignoredBaseModels := cfg.Download.IgnoreBaseModels
 		baseModelMatch := false
 		if len(ignoredBaseModels) > 0 && pd.FullVersion.BaseModel != "" {
 			for _, ignoredBM := range ignoredBaseModels {
@@ -506,7 +581,6 @@ func filterAndPrepareDownloads(potentialDownloadsPage []potentialDownload, db *d
 			continue
 		}
 
-		// Passed checks, add to the list for this page and update size
 		downloadsToQueueFiltered = append(downloadsToQueueFiltered, pd)
 		totalSizeFiltered += uint64(pd.File.SizeKB) * 1024
 	}
@@ -515,7 +589,7 @@ func filterAndPrepareDownloads(potentialDownloadsPage []potentialDownload, db *d
 
 // fetchModelsPaginated retrieves models page by page from the API.
 // ADDED userTotalLimit parameter.
-func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloader *downloader.Downloader, queryParams models.QueryParameters, cfg *models.Config, bleveIndex bleve.Index, userTotalLimit int) ([]potentialDownload, uint64, error) {
+func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloader *downloader.Downloader, queryParams models.QueryParameters, cfg *models.Config, userTotalLimit int) ([]potentialDownload, uint64, error) {
 	var allPotentialDownloads []potentialDownload
 	var totalDownloadSize uint64
 	var nextCursor string
@@ -564,6 +638,8 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 		log.Infof("--- Fetching Model Page %d (Cursor: %s) ---", pageCount, nextCursor)
 
 		// Make the API call using the client's method
+				// Make the API call using the client's method
+				// Make the API call using the client's method
 		nextCursor, response, err = apiClient.GetModels(nextCursor, queryParams)
 		if err != nil {
 			// Handle specific error types from the client
@@ -606,34 +682,52 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 
 			// Client-side base model filtering
 			if len(cfg.Download.IgnoreBaseModels) > 0 && len(model.ModelVersions) > 0 {
-				if helpers.StringSliceContains(cfg.Download.IgnoreBaseModels, model.ModelVersions[0].BaseModel) {
-					log.Debugf("Skipping model %s (ID: %d) due to ignored base model: %s", model.Name, model.ID, model.ModelVersions[0].BaseModel)
+				// Check against the first version's base model as a representative.
+				// More sophisticated filtering might require checking all versions or relying on model tags if available.
+				var representativeBaseModel string
+				for _, mv := range model.ModelVersions {
+					if mv.BaseModel != "" {
+						representativeBaseModel = mv.BaseModel
+						break
+					}
+				}
+				if representativeBaseModel != "" && helpers.StringSliceContains(cfg.Download.IgnoreBaseModels, representativeBaseModel) {
+					log.Debugf("Skipping model %s (ID: %d) due to ignored base model: %s", model.Name, model.ID, representativeBaseModel)
 					continue
+				} else if representativeBaseModel == "" {
+					log.Debugf("Model %s (ID: %d) has no versions with BaseModels specified, cannot apply base model ignore filter.", model.Name, model.ID)
 				}
 			}
 
 			// --- Fetch Full Model Details (if needed for Info or Model Images) ---
-			var fullModelDetails models.Model
-			var detailErr error
-			shouldFetchDetails := cfg.Download.SaveModelInfo || cfg.Download.SaveModelImages
-			modelBaseDir := filepath.Join(cfg.SavePath, helpers.ConvertToSlug(model.Type), helpers.ConvertToSlug(model.Name))
+			var fullModelDetails models.Model // This will store the full model data if fetched
+			// Determine if we need to fetch full details: if SaveModelInfo is true, OR if SaveModelImages is true AND the model from list doesn't have rich version data
+			shouldFetchDetails := cfg.Download.SaveModelInfo || (cfg.Download.SaveModelImages && len(model.ModelVersions) > 0 && len(model.ModelVersions[0].Images) == 0)
 
 			if shouldFetchDetails {
 				log.Debugf("Fetching full details for model %d (%s) for info/images...", model.ID, model.Name)
-				fullModelDetails, detailErr = apiClient.GetModelDetails(model.ID)
-				if detailErr != nil {
-					log.WithError(detailErr).Warnf("Failed to fetch full details for model %d. Skipping info/image processing for this model.", model.ID)
-					// Reset fullModelDetails to ensure we use the basic model data later
-					fullModelDetails = models.Model{}
+				fetchedDetails, err := apiClient.GetModelDetails(model.ID) // Use a different variable name
+				if err != nil {
+					log.WithError(err).Warnf("Failed to fetch full details for model %d. Skipping info/image processing for this model.", model.ID)
+					// _ = err // Error is already handled by logging, and we proceed with potentially empty fullModelDetails
+					// fullModelDetails will remain empty, logic below will use 'model' from list
+				} else {
+					fullModelDetails = fetchedDetails // Assign to the main variable on success
 				}
 			}
 			// --- End Fetch Full Model Details ---
 
-			// --- Download Model Images (if requested and details fetched) ---
-			if cfg.Download.SaveModelImages && fullModelDetails.ID != 0 && imageDownloader != nil {
-				log.Debugf("SaveModelImages enabled for model %d. Collecting images...", model.ID)
+			// --- Download Model Images (if requested) ---
+			// Use fullModelDetails if available, otherwise use 'model' from list for image collection
+			modelForImages := model
+			if fullModelDetails.ID != 0 {
+				modelForImages = fullModelDetails
+			}
+
+			if cfg.Download.SaveModelImages && imageDownloader != nil {
+				log.Debugf("SaveModelImages enabled for model %d (%s). Collecting images...", modelForImages.ID, modelForImages.Name)
 				var allModelImages []models.ModelImage
-				for _, version := range fullModelDetails.ModelVersions { // Use versions from full details
+				for _, version := range modelForImages.ModelVersions { // Use versions from the chosen model data
 					if len(version.Images) > 0 {
 						allModelImages = append(allModelImages, version.Images...)
 					}
@@ -641,19 +735,42 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 
 				if len(allModelImages) > 0 {
 					// Save images to {modelBaseDir}/images/
-					modelImagesDir := filepath.Join(modelBaseDir, "images")
-					imgLogPrefix := fmt.Sprintf("[Model-%d-Images]", model.ID)
-					log.Infof("%s Downloading %d images for model %s to %s", imgLogPrefix, len(allModelImages), model.Name, modelImagesDir)
-					imgSuccess, imgFail := downloadImages(
-						imgLogPrefix,
-						allModelImages,
-						modelImagesDir, // Target the model's images subdir
-						imageDownloader,
-						cfg.Download.Concurrency,
-					)
-					log.Infof("%s Finished model image download. Success: %d, Failures: %d", imgLogPrefix, imgSuccess, imgFail)
+					// For model images, we need a base directory. Let's use the ModelInfoPathPattern as the base, then add /images.
+					// This ensures consistency if ModelInfoPathPattern includes creator, etc.
+					imgModelData := modelForImages // Use modelForImages for consistency
+					if imgModelData.Creator.Username == "" {
+						imgModelData.Creator.Username = "unknown_creator" // Ensure creator for path
+					}
+					pathDataForImageBaseDir := buildPathData(&imgModelData, nil, nil)
+
+					// If ModelInfoPathPattern (used for image base dir) uses {baseModel}, it's ambiguous.
+					// Ensure it resolves to "unknown_baseModel".
+					if strings.Contains(cfg.Download.ModelInfoPathPattern, "{baseModel}") {
+						baseModelValue, bmExists := pathDataForImageBaseDir["baseModel"]
+						if !bmExists || strings.TrimSpace(baseModelValue) == "" {
+							pathDataForImageBaseDir["baseModel"] = "unknown_baseModel"
+							log.Debugf("For model image base path (model %d), {baseModel} is ambiguous or empty, setting to 'unknown_baseModel' for path generation.", imgModelData.ID)
+						}
+					}
+
+					relImageBaseDir, errPathImg := paths.GeneratePath(cfg.Download.ModelInfoPathPattern, pathDataForImageBaseDir)
+					if errPathImg != nil {
+						log.WithError(errPathImg).Errorf("Failed to generate base path for model images for model %s (ID: %d) using pattern '%s'. Skipping model images.", imgModelData.Name, imgModelData.ID, cfg.Download.ModelInfoPathPattern)
+					} else {
+						modelImagesStorageDir := filepath.Join(cfg.SavePath, relImageBaseDir, "images")
+						imgLogPrefix := fmt.Sprintf("[Model-%d-Images]", imgModelData.ID)
+						log.Infof("%s Downloading %d images for model %s to %s", imgLogPrefix, len(allModelImages), imgModelData.Name, modelImagesStorageDir)
+						imgSuccess, imgFail := downloadImages(
+							imgLogPrefix,
+							allModelImages,
+							modelImagesStorageDir, // Target the model's images subdir
+							imageDownloader,
+							cfg.Download.Concurrency,
+						)
+						log.Infof("%s Finished model image download. Success: %d, Failures: %d", imgLogPrefix, imgSuccess, imgFail)
+					}
 				} else {
-					log.Infof("[Model-%d-Images] No images found in full model details.", model.ID)
+					log.Infof("[Model-%d-Images] No images found in full model details.", modelForImages.ID)
 				}
 			}
 			// --- End Download Model Images ---
@@ -667,20 +784,30 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 						continue
 					}
 
-					// Construct the directory path using Model Type, Model Name Slug, and Version ID+Name Slug
-					modelTypeName := helpers.ConvertToSlug(model.Type)
-					modelNameSlug := helpers.ConvertToSlug(model.Name)
-					versionIDStr := strconv.Itoa(version.ID)
-					versionNameSlug := helpers.ConvertToSlug(version.Name)
-					versionDirSegment := fmt.Sprintf("%s-%s", versionIDStr, versionNameSlug)
-					baseModelSlug := helpers.ConvertToSlug(version.BaseModel)
-					if baseModelSlug == "" {
-						baseModelSlug = "unknown_base"
+					// Determine the model object to use for building path data
+					finalModelForVersionPath := model // Default to model from the list
+					if fullModelDetails.ID != 0 {
+						finalModelForVersionPath = fullModelDetails // Prefer full details if fetched
 					}
-					targetDir := filepath.Join(cfg.SavePath, modelTypeName, modelNameSlug, baseModelSlug, versionDirSegment)
-					// Construct filename with version ID prefix (consistent with DB logic)
+					if finalModelForVersionPath.Creator.Username == "" {
+						log.Debugf("Model %s (ID: %d) had empty creator for version path, defaulting to 'unknown_creator'", finalModelForVersionPath.Name, finalModelForVersionPath.ID)
+						finalModelForVersionPath.Creator.Username = "unknown_creator"
+					}
+
+					pathDataForVersionFile := buildPathData(&finalModelForVersionPath, &version, &file)
+					relVersionPathDir, errPath := paths.GeneratePath(cfg.Download.VersionPathPattern, pathDataForVersionFile)
+
+					if errPath != nil {
+						log.WithError(errPath).Errorf("Failed to generate version file path for model %s (ID: %d), version %s (ID: %d), file %s using pattern '%s'. Skipping file.",
+							finalModelForVersionPath.Name, finalModelForVersionPath.ID, version.Name, version.ID, file.Name, cfg.Download.VersionPathPattern)
+						continue // Skip this file
+					}
+
+					// The VersionPathPattern is expected to define the full directory structure for the version.
+					absoluteVersionDir := filepath.Join(cfg.SavePath, relVersionPathDir)
+
 					finalBaseFilename := fmt.Sprintf("%d_%s", version.ID, helpers.ConvertToSlug(file.Name))
-					targetPath := filepath.Join(targetDir, finalBaseFilename)
+					targetPath := filepath.Join(absoluteVersionDir, finalBaseFilename)
 
 					// Resolve which model data to use
 					modelDataForPd := model       // Default to list API model
@@ -823,14 +950,14 @@ func CreateDownloadQueryParams(cfg *models.Config) models.QueryParameters {
 
 // fetchAndProcessModels orchestrates the entire model fetching process.
 // It sets up the API client and calls fetchModelsPaginated.
-func fetchAndProcessModels(apiClient *api.Client, db *database.DB, queryParams models.QueryParameters, cfg *models.Config, bleveIndex bleve.Index) ([]potentialDownload, error) {
+func fetchAndProcessModels(apiClient *api.Client, db *database.DB, queryParams models.QueryParameters, cfg *models.Config) ([]potentialDownload, error) {
 
 	// Setup image downloader (needed for all-versions case inside fetchModelsPaginated)
 	// Pass the correct arguments: http client and api key
 	imageDownloader := downloader.NewDownloader(apiClient.HttpClient, cfg.APIKey)
 
 	// Fetch models - Pass userTotalLimit (cfg.Download.Limit) now
-	allPotentialDownloads, _, err := fetchModelsPaginated(apiClient, db, imageDownloader, queryParams, cfg, bleveIndex, cfg.Download.Limit)
+	allPotentialDownloads, _, err := fetchModelsPaginated(apiClient, db, imageDownloader, queryParams, cfg, cfg.Download.Limit)
 	if err != nil {
 		// Log the error, but potentially return the downloads found so far?
 		// For now, just return the error.

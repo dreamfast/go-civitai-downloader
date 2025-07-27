@@ -10,12 +10,10 @@ import (
 	"sync"
 	"time"
 
-	index "go-civitai-download/index"
 	"go-civitai-download/internal/database"
 	"go-civitai-download/internal/downloader"
 	"go-civitai-download/internal/models"
 
-	"github.com/blevesearch/bleve/v2"
 	"github.com/gosuri/uilive"
 	log "github.com/sirupsen/logrus"
 )
@@ -80,30 +78,45 @@ func updateDbEntry(db *database.DB, key string, newStatus string, updateFunc fun
 	return nil
 }
 
-// handleMetadataSaving checks the config and calls saveMetadataFile if needed.
-// Now accepts cfg *models.Config
+// handleMetadataSaving checks config flags and calls the appropriate metadata saving functions.
+// It's called by the worker after a file download has successfully completed.
 func handleMetadataSaving(logPrefix string, pd potentialDownload, finalPath string, finalStatus string, writer *uilive.Writer, cfg *models.Config) {
-	// Check config directly
+	if finalStatus != models.StatusDownloaded {
+		log.Debugf("[%s] Skipping all metadata saving for %s due to download status: %s.", logPrefix, pd.TargetFilepath, finalStatus)
+		return
+	}
+
+	// Save Version-Specific Metadata JSON (--metadata)
 	if cfg.Download.SaveMetadata {
-		if finalStatus == models.StatusDownloaded {
-			log.Debugf("[%s] Saving metadata for successfully downloaded file: %s", logPrefix, finalPath)
-			if metaErr := saveMetadataFile(pd, finalPath); metaErr != nil {
-				// Error already logged by saveMetadataFile
-				if writer != nil {
-					fmt.Fprintf(writer.Newline(), "[%s] Error saving metadata for %s: %v\n", logPrefix, filepath.Base(finalPath), metaErr)
-				}
+		log.Debugf("[%s] Saving version metadata for successfully downloaded file: %s", logPrefix, finalPath)
+		if metaErr := saveVersionMetadataFile(pd, finalPath); metaErr != nil {
+			if writer != nil {
+				fmt.Fprintf(writer.Newline(), "[%s] Error saving version metadata for %s: %v\n", logPrefix, filepath.Base(finalPath), metaErr)
 			}
-		} else {
-			log.Debugf("[%s] Skipping metadata save for %s due to download status: %s.", logPrefix, pd.TargetFilepath, finalStatus)
+			// Error is already logged by saveVersionMetadataFile
 		}
 	} else {
-		log.Debugf("[%s] Skipping metadata save (disabled by config) for %s.", logPrefix, finalPath)
+		log.Debugf("[%s] Skipping version metadata save (disabled by --metadata) for %s.", logPrefix, finalPath)
+	}
+
+	// Save Model Info JSON (--model-info)
+	if cfg.Download.SaveModelInfo {
+		log.Debugf("[%s] Saving model info for successfully downloaded file: %s", logPrefix, finalPath)
+		// This function is now in cmd_download_processing.go
+		if infoErr := saveModelInfoFile(pd, cfg); infoErr != nil {
+			if writer != nil {
+				fmt.Fprintf(writer.Newline(), "[%s] Error saving model info for %s: %v\n", logPrefix, pd.ModelName, infoErr)
+			}
+			// Error is already logged by saveModelInfoFile
+		}
+	} else {
+		log.Debugf("[%s] Skipping model info save (disabled by --model-info) for %s.", logPrefix, finalPath)
 	}
 }
 
 // downloadWorker handles the actual download of a file and updates the database.
 // It now also accepts an imageDownloader, bleveIndex, and the config.
-func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownloader *downloader.Downloader, imageDownloader *downloader.Downloader, wg *sync.WaitGroup, writer *uilive.Writer, totalJobs int, bleveIndex bleve.Index, cfg *models.Config) {
+func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownloader *downloader.Downloader, imageDownloader *downloader.Downloader, wg *sync.WaitGroup, writer *uilive.Writer, totalJobs int, cfg *models.Config) {
 	defer wg.Done()
 	logPrefix := fmt.Sprintf("Worker-%d", id)
 	log.Debugf("[%s] Starting", logPrefix)
@@ -161,7 +174,7 @@ func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownlo
 		}
 
 		// --- Main File Download Logic (Skip if already Downloaded) --- START ---
-		finalStatus := initialDbStatus // Start with the initial status
+		var finalStatus string
 		var downloadErr error = nil    // Initialize downloadErr to nil
 
 		if initialDbStatus != models.StatusDownloaded {
@@ -195,6 +208,19 @@ func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownlo
 					entry.Filename = filepath.Base(finalPath) // Update filename in DB
 					entry.File = pd.File                      // Update File struct
 					entry.Version = pd.FullVersion            // Update Version struct
+
+					// Correctly set the Folder path relative to SavePath
+					// directoryPath is filepath.Dir(pd.TargetFilepath), which is absolute here after download
+					// finalPath is the actual path of the downloaded file, its dir should be used.
+					actualFileDir := filepath.Dir(finalPath)
+					folderRelToSavePath, err := filepath.Rel(cfg.SavePath, actualFileDir)
+					if err != nil {
+						log.WithError(err).Warnf("Failed to calculate relative path for Folder for DB entry %s. Storing absolute: %s", dbKey, actualFileDir)
+						entry.Folder = actualFileDir // Fallback to absolute if Rel fails
+					} else {
+						entry.Folder = folderRelToSavePath
+					}
+					log.Debugf("Updating DB entry %s with Folder: %s", dbKey, entry.Folder)
 				}
 			})
 			if updateErr != nil {
@@ -207,58 +233,6 @@ func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownlo
 				log.Debugf("[%s] DB status updated to %s for key %s", logPrefix, finalStatus, dbKey)
 			}
 			// --- Update DB Based on Download Result --- END ---
-
-			// --- Index Item with Bleve (Only after successful download and DB update) --- START ---
-			if finalStatus == models.StatusDownloaded && updateErr == nil && bleveIndex != nil {
-				// ... (rest of Bleve indexing logic - ASSUME it uses finalPath, directoryPath correctly)
-				// Calculate directory paths (directoryPath already defined)
-				baseModelPath := filepath.Dir(directoryPath)
-				modelPath := filepath.Dir(baseModelPath)
-				// ... parse time, get metadata ...
-				publishedAtTime := time.Time{}
-				if pd.FullVersion.PublishedAt != "" {
-					var errParse error
-					publishedAtTime, errParse = time.Parse(time.RFC3339Nano, pd.FullVersion.PublishedAt)
-					if errParse != nil {
-						publishedAtTime, errParse = time.Parse(time.RFC3339, pd.FullVersion.PublishedAt)
-						if errParse != nil {
-							log.WithError(errParse).Warnf("Worker %d: Failed to parse PublishedAt time '%s' for indexing", id, pd.FullVersion.PublishedAt)
-						}
-					}
-				}
-				fileFormat := pd.File.Metadata.Format
-				filePrecision := pd.File.Metadata.Fp
-				fileSizeType := pd.File.Metadata.Size
-				itemToIndex := index.Item{
-					ID:                   fmt.Sprintf("v_%d_f_%d", pd.ModelVersionID, pd.File.ID), // Use DB Key
-					Type:                 "model_file",
-					Name:                 pd.File.Name, // Use the original file name
-					Description:          pd.FullVersion.Description,
-					FilePath:             finalPath,
-					DirectoryPath:        directoryPath,
-					BaseModelPath:        baseModelPath,
-					ModelPath:            modelPath,
-					ModelName:            pd.ModelName,
-					VersionName:          pd.VersionName,
-					BaseModel:            pd.BaseModel,
-					CreatorName:          pd.Creator.Username,
-					Tags:                 pd.FullVersion.TrainedWords,
-					PublishedAt:          publishedAtTime,
-					VersionDownloadCount: float64(pd.FullVersion.Stats.DownloadCount),
-					VersionRating:        pd.FullVersion.Stats.Rating,
-					VersionRatingCount:   float64(pd.FullVersion.Stats.RatingCount),
-					FileSizeKB:           pd.File.SizeKB,
-					FileFormat:           fileFormat,
-					FilePrecision:        filePrecision,
-					FileSizeType:         fileSizeType,
-				}
-				if indexErr := index.IndexItem(bleveIndex, itemToIndex); indexErr != nil {
-					log.WithError(indexErr).Errorf("Worker %d: Failed to index downloaded item %s (ID: %s)", id, finalPath, itemToIndex.ID)
-				} else {
-					log.Debugf("Worker %d: Successfully indexed item %s (ID: %s)", id, finalPath, itemToIndex.ID)
-				}
-			}
-			// --- Index Item with Bleve --- END ---
 
 		} else {
 			log.Infof("[%s] Initial status is '%s', skipping main file download.", logPrefix, initialDbStatus)
@@ -280,18 +254,18 @@ func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownlo
 				if len(pd.OriginalImages) > 0 {
 					// --- Determine Correct Image Directory --- NEW
 					// Use the directory of the final downloaded file path
-					versionOutputDir := filepath.Dir(finalPath)
+					versionOutputDir := filepath.Dir(finalPath) // finalPath is absolute
 					imageSubDir := filepath.Join(versionOutputDir, "images")
 
-					// Ensure the images subdirectory exists
-					if err := os.MkdirAll(imageSubDir, 0700); err != nil {
+					// Ensure the images subdirectory exists (downloadImages also checks, but good practice here too)
+					if err := os.MkdirAll(imageSubDir, 0750); err != nil {
 						log.WithError(err).Errorf("%s Failed to create image directory: %s", imgLogPrefix, imageSubDir)
 					} else {
 						log.Infof("%s Downloading %d version images for %s to %s", imgLogPrefix, len(pd.OriginalImages), filepath.Base(finalPath), imageSubDir)
 						imgSuccess, imgFail := downloadImages(
 							imgLogPrefix,
 							pd.OriginalImages,
-							imageSubDir, // Pass the specific image subdirectory again
+							imageSubDir, // Pass the absolute image subdirectory path
 							imageDownloader,
 							cfg.Download.Concurrency, // Reuse download concurrency for images for now
 						)
@@ -316,9 +290,9 @@ func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownlo
 	log.Debugf("[%s] Exiting", logPrefix)
 }
 
-// saveMetadataFile saves the full model version metadata to a .json file.
+// saveVersionMetadataFile saves the full model version metadata to a .json file.
 // It derives the filename from the model file path.
-func saveMetadataFile(pd potentialDownload, modelFilePath string) error {
+func saveVersionMetadataFile(pd potentialDownload, modelFilePath string) error {
 	// Derive metadata path from the model file path
 	metadataPath := strings.TrimSuffix(modelFilePath, filepath.Ext(modelFilePath)) + ".json"
 	log.Debugf("Attempting to save metadata to: %s", metadataPath)

@@ -14,15 +14,12 @@ import (
 
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
-	"github.com/blevesearch/bleve/v2"
-	"github.com/blevesearch/bleve/v2/search/query" // Import for query types
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	// "github.com/spf13/viper" // Removed Viper import
 
-	index "go-civitai-download/index"
 	"go-civitai-download/internal/database"
 	"go-civitai-download/internal/models"
 )
@@ -38,79 +35,6 @@ type torrentJob struct {
 	ModelID        int        // ID of the parent model
 	ModelName      string     // Name of the model
 	ModelType      string     // Type of the model (e.g., LORA, Checkpoint) - Keep for potential use if Item struct changes
-	BleveIndex     bleve.Index
-}
-
-// Helper to update or create the index item for a model torrent
-func updateModelTorrentIndex(job torrentJob, torrentPath, magnetURI string) error {
-	modelItemID := fmt.Sprintf("m_%d", job.ModelID) // Index key for the model
-	var itemToUpdate index.Item
-
-	// --- Search for existing model item ---
-	termQuery := query.NewTermQuery(modelItemID)
-	termQuery.SetField("_id") // Search by document ID
-	searchRequest := bleve.NewSearchRequest(termQuery)
-	searchRequest.Size = 1 // We only need to know if it exists
-
-	searchResult, err := job.BleveIndex.Search(searchRequest)
-	if err != nil {
-		log.WithFields(job.LogFields).WithError(err).Errorf("Error searching for existing index item %s", modelItemID)
-		return fmt.Errorf("error searching index for %s: %w", modelItemID, err)
-	}
-
-	if searchResult.Total > 0 {
-		// --- Item exists, fetch it to update ---
-		docID := searchResult.Hits[0].ID
-		_, err := job.BleveIndex.Document(docID) // Use blank identifier as doc is not used
-		if err != nil {
-			log.WithFields(job.LogFields).WithError(err).Warnf("Found index item %s in search but failed to retrieve document. Will attempt to create new.", modelItemID)
-			// Proceed to create new item below
-		} else {
-			// Found existing document, try to unmarshal its fields
-			// This assumes the document fields match the index.Item struct
-			// A more robust way involves iterating fields: doc.VisitFields(...)
-			// But let's try direct unmarshal for simplicity first.
-			// We need the raw bytes stored under a known field or use Bleve's internal storage retrieval if possible.
-			// Simplification: Let's recreate the item with known fields + new torrent info.
-			// This might lose some fields if the original index item had more, but ensures core info is present.
-			log.WithFields(job.LogFields).Debugf("Found existing index item %s, preparing update.", modelItemID)
-			itemToUpdate = index.Item{
-				ID:            modelItemID,
-				Type:          "model",
-				ModelName:     job.ModelName,
-				DirectoryPath: job.SourcePath,
-				// Preserve other fields if fetched, otherwise they get defaults
-			}
-			// If we successfully fetched and unmarshalled the *full* existing item,
-			// we would just modify itemToUpdate.TorrentPath and itemToUpdate.MagnetLink here.
-		}
-	}
-
-	// --- If item didn't exist or fetch failed, create a new one ---
-	if itemToUpdate.ID == "" { // Check if we need to create
-		log.WithFields(job.LogFields).Debugf("Index item %s not found or fetch failed, creating new item.", modelItemID)
-		itemToUpdate = index.Item{
-			ID:        modelItemID,
-			Type:      "model", // Indicate this is a model-level item
-			ModelName: job.ModelName,
-			// ModelType:     job.ModelType, // REMOVED - Field does not exist in index.Item
-			DirectoryPath: job.SourcePath, // Path to the main model directory
-			// Add other essential fields if needed/available, otherwise leave blank
-		}
-	}
-
-	// Add/Update torrent info
-	itemToUpdate.TorrentPath = torrentPath
-	itemToUpdate.MagnetLink = magnetURI // Store the actual magnet URI
-
-	// Update the index
-	if err := index.IndexItem(job.BleveIndex, itemToUpdate); err != nil { // Pass by value ok here
-		log.WithFields(job.LogFields).WithError(err).Errorf("Failed to update/create index for model item %s", modelItemID)
-		return fmt.Errorf("failed to index model item %s: %w", modelItemID, err)
-	}
-
-	log.WithFields(job.LogFields).Debugf("Successfully updated/created index for model item %s with torrent info", modelItemID)
-	return nil
 }
 
 // torrentWorker function - Uses helper for indexing
@@ -120,8 +44,7 @@ func torrentWorker(id int, jobs <-chan torrentJob, wg *sync.WaitGroup, successCo
 	for job := range jobs {
 		log.WithFields(job.LogFields).Infof("Worker %d: Processing torrent job for model directory %s", id, job.SourcePath)
 		// Generate torrent for the entire model directory
-		// Capture magnetPath (_), as we don't need it for indexing anymore, but need the magnetURI
-		torrentPath, _, magnetURI, err := generateTorrentFile(job.SourcePath, job.Trackers, job.OutputDir, job.Overwrite, job.GenerateMagnet)
+		_, _, _, err := generateTorrentFile(job.SourcePath, job.Trackers, job.OutputDir, job.Overwrite, job.GenerateMagnet)
 		if err != nil {
 			log.WithFields(job.LogFields).WithError(err).Errorf("Worker %d: Failed to generate torrent for %s", id, job.SourcePath)
 			failureCounter.Add(1)
@@ -130,15 +53,6 @@ func torrentWorker(id int, jobs <-chan torrentJob, wg *sync.WaitGroup, successCo
 
 		log.WithFields(job.LogFields).Infof("Worker %d: Successfully generated torrent for %s", id, job.SourcePath)
 		successCounter.Add(1)
-
-		// Update the index with model-level torrent information using the helper
-		if job.BleveIndex != nil {
-			// Pass the actual magnetURI string
-			if err := updateModelTorrentIndex(job, torrentPath, magnetURI); err != nil {
-				// Log the error from the helper, but don't count as torrent generation failure
-				log.WithFields(job.LogFields).WithError(err).Errorf("Worker %d: Index update failed after successful torrent generation.", id)
-			}
-		}
 	} // end for job := range jobs
 	log.Debugf("Torrent Worker %d finished", id)
 }
@@ -189,29 +103,6 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 			return fmt.Errorf("error opening database: %w", err)
 		}
 		defer db.Close()
-
-		indexPath := cfg.BleveIndexPath // Use global config
-		if indexPath == "" {
-			// This should be handled by Initialize setting a default
-			log.Warnf("BleveIndexPath not set in config, using default path derived from SavePath: %s", filepath.Join(savePath, "civitai.bleve"))
-			indexPath = filepath.Join(savePath, "civitai.bleve") // Default if not set
-		}
-		log.Infof("Opening/Creating Bleve index at: %s", indexPath)
-		bleveIndex, err := index.OpenOrCreateIndex(indexPath)
-		if err != nil {
-			log.WithError(err).Error("Failed to open or create Bleve index")
-			// Attempt to close index even if opening failed (might be partially open)
-			if bleveIndex != nil {
-				_ = bleveIndex.Close() // Ignore error on close attempt here
-			}
-			return fmt.Errorf("failed to open or create Bleve index: %w", err)
-		}
-		defer func() {
-			log.Info("Closing Bleve index")
-			if err := bleveIndex.Close(); err != nil {
-				log.WithError(err).Error("Error closing Bleve index")
-			}
-		}()
 
 		// Retrieve bound flag values using Viper
 		torrentOutputDirEffective := viper.GetString("torrent.outputdir")
@@ -307,7 +198,6 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 					ModelID:    entry.ModelID,
 					ModelName:  entry.ModelName,
 					ModelType:  modelType, // Store the determined model type
-					BleveIndex: bleveIndex,
 				}
 				modelDirsToProcess[modelDir] = job
 			}

@@ -30,11 +30,11 @@ type (
 	// DownloadConfig holds settings specific to the 'download' command.
 	DownloadConfig struct {
 		Concurrency           int      `toml:"Concurrency"`
-		Tag                   string   `toml:"Tag"` // Using single tag based on current flag/API
+		Tag                   string   `toml:"Tag"`
 		Query                 string   `toml:"Query"`
 		ModelTypes            []string `toml:"ModelTypes"`
 		BaseModels            []string `toml:"BaseModels"`
-		Usernames             []string `toml:"Usernames"` // Mismatch with single --username flag noted in analysis
+		Usernames             []string `toml:"Usernames"`
 		Nsfw                  bool     `toml:"Nsfw"`
 		Limit                 int      `toml:"Limit"`
 		MaxPages              int      `toml:"MaxPages"`
@@ -53,6 +53,8 @@ type (
 		SaveVersionImages     bool     `toml:"VersionImages"`
 		SaveModelImages       bool     `toml:"ModelImages"`
 		DownloadMetaOnly      bool     `toml:"MetaOnly"`
+		VersionPathPattern    string   `toml:"VersionPathPattern"`
+		ModelInfoPathPattern  string   `toml:"ModelInfoPathPattern"`
 
 		// Fields corresponding to flags without direct config.toml entries
 		ModelID int `toml:"-"` // Flag only (`--model-id`)
@@ -272,6 +274,25 @@ type (
 		Hash   string `json:"hash"` // Blurhash
 		Width  int    `json:"width"`
 		Height int    `json:"height"`
+		// Added from original ModelImage, if available/relevant for ImageApiItem
+		Nsfw      interface{} `json:"nsfw,omitempty"` // API for images can take boolean or string
+		NsfwLevel interface{} `json:"nsfwLevel,omitempty"`
+		Username  string      `json:"username,omitempty"`
+		PostID    *int        `json:"postId,omitempty"`
+		// Meta      interface{} `json:"meta,omitempty"` // Usually contains prompt info
+	}
+
+	// ImageAPIParameters defines the query parameters specific to the /api/v1/images endpoint.
+	ImageAPIParameters struct {
+		ModelID        int    `json:"modelId,omitempty"`
+		ModelVersionID int    `json:"modelVersionId,omitempty"`
+		PostID         int    `json:"postId,omitempty"`
+		Username       string `json:"username,omitempty"`
+		Limit          int    `json:"limit,omitempty"`  // API default is 100, max 200 for images. 0 could mean API default.
+		Sort           string `json:"sort,omitempty"`   // e.g., "Newest", "Most Reactions"
+		Period         string `json:"period,omitempty"` // e.g., "AllTime", "Day"
+		Nsfw           string `json:"nsfw,omitempty"`   // API values: "None", "Soft", "Mature", "X", "true", "false". Empty means omit.
+		Cursor         string `json:"cursor,omitempty"`
 	}
 )
 
@@ -290,8 +311,6 @@ func ConstructApiUrl(params QueryParameters) string {
 	// Add parameters if they have non-default values
 	if params.Limit > 0 && params.Limit <= 100 { // Use API default if not set or invalid
 		values.Set("limit", strconv.Itoa(params.Limit))
-	} else {
-		// Let the API use its default limit (usually 100)
 	}
 
 	if params.Page > 0 { // Page is only relevant for non-cursor pagination (less common now)

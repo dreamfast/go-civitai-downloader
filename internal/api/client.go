@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"go-civitai-download/internal/models"
@@ -52,9 +54,6 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 	// Add cursor *only if* it's provided (not empty)
 	if cursor != "" {
 		values.Add("cursor", cursor)
-	} else {
-		// For the first request (empty cursor), do not add 'page' either.
-		// The API defaults to the first page/results without page/cursor.
 	}
 
 	reqURL := fmt.Sprintf("%s/models?%s", CivitaiApiBaseUrl, values.Encode())
@@ -94,7 +93,6 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 
 		switch resp.StatusCode {
 		case http.StatusOK:
-			lastErr = nil        // Success
 			goto ProcessResponse // Use goto to break out of switch and loop
 		case http.StatusTooManyRequests:
 			lastErr = ErrRateLimited
@@ -121,7 +119,7 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 		if resp != nil && resp.Body != nil {
 			// Drain and close the body to allow connection reuse for retry
 			_, _ = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		if attempt < maxRetries-1 {
@@ -144,14 +142,14 @@ RequestFailed:
 	if lastErr != nil {
 		// Close body if response exists and we failed
 		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		return "", models.ApiResponse{}, lastErr
 	}
 
 ProcessResponse:
 	// Body should be readable here (either original or replaced by logging transport)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body) // Read the final body
 	if err != nil {
@@ -240,7 +238,6 @@ func (c *Client) GetModelDetails(modelID int) (models.Model, error) {
 
 		switch resp.StatusCode {
 		case http.StatusOK:
-			lastErr = nil
 			goto ProcessModelDetailsResponse
 		case http.StatusUnauthorized, http.StatusForbidden:
 			lastErr = ErrUnauthorized
@@ -255,7 +252,7 @@ func (c *Client) GetModelDetails(modelID int) (models.Model, error) {
 				// Close body before retry
 				if resp != nil && resp.Body != nil {
 					_, _ = io.Copy(io.Discard, resp.Body)
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 				time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
 				continue // Retry server errors
@@ -267,13 +264,13 @@ func (c *Client) GetModelDetails(modelID int) (models.Model, error) {
 RequestModelDetailsFailed:
 	if lastErr != nil {
 		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		return models.Model{}, lastErr
 	}
 
 ProcessModelDetailsResponse:
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body) // Read final body
 	if err != nil {
 		log.WithError(err).Error("Error reading final model details response body")
@@ -288,6 +285,57 @@ ProcessModelDetailsResponse:
 	}
 
 	return modelDetails, nil
+}
+
+// ConvertImageAPIParamsToURLValues converts the ImageAPIParameters struct into url.Values
+// suitable for Civitai /api/v1/images requests.
+func ConvertImageAPIParamsToURLValues(queryParams models.ImageAPIParameters) url.Values {
+	values := url.Values{}
+
+	if queryParams.ModelID != 0 {
+		values.Add("modelId", strconv.Itoa(queryParams.ModelID))
+	}
+	if queryParams.ModelVersionID != 0 {
+		values.Add("modelVersionId", strconv.Itoa(queryParams.ModelVersionID))
+	}
+	if queryParams.PostID != 0 {
+		values.Add("postId", strconv.Itoa(queryParams.PostID))
+	}
+	if queryParams.Username != "" {
+		values.Add("username", queryParams.Username)
+	}
+
+	// Handle Limit: API default is 100, max 200.
+	// If 0, it could mean let API use its default, or it's an invalid user input.
+	// For now, only add if > 0. The calling function should ensure it's within API constraints if set.
+	if queryParams.Limit > 0 {
+		values.Add("limit", strconv.Itoa(queryParams.Limit))
+	}
+
+	if queryParams.Sort != "" {
+		values.Add("sort", queryParams.Sort)
+	}
+	if queryParams.Period != "" {
+		values.Add("period", queryParams.Period)
+	}
+
+	// Handle Nsfw: Can be "None", "Soft", "Mature", "X", "true", "false".
+	// If "None", map to "false". Empty string means omit.
+	// Otherwise, use the string value directly.
+	if queryParams.Nsfw != "" {
+		if strings.ToLower(queryParams.Nsfw) == "none" {
+			values.Add("nsfw", "false")
+		} else {
+			values.Add("nsfw", queryParams.Nsfw) // Pass "true", "false", "Soft", "Mature", "X" directly
+		}
+	}
+
+	// Cursor is added by the calling loop, similar to GetModels
+	// if queryParams.Cursor != "" {
+	// 	values.Add("cursor", queryParams.Cursor)
+	// }
+
+	return values
 }
 
 // TODO: Add methods for other API endpoints (e.g., GetModelVersionByID)

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -10,12 +9,11 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
-	"go-civitai-download/internal/database"
 	"go-civitai-download/internal/downloader"
 	"go-civitai-download/internal/helpers"
 	"go-civitai-download/internal/models"
+	"go-civitai-download/internal/paths"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -97,200 +95,32 @@ func imageDownloadWorkerInternal(id int, jobs <-chan imageDownloadJob, imageDown
 
 // --- Worker for Concurrent Image Downloads --- END ---
 
-// processPage filters downloads based on config and database status.
-// It returns the list of downloads that should be queued and their total size.
-func processPage(db *database.DB, pageDownloads []potentialDownload, cfg *models.Config) ([]potentialDownload, uint64) {
-	downloadsToQueue := []potentialDownload{}
-	var queuedSizeBytes uint64 = 0
-
-	for _, pd := range pageDownloads {
-		// Calculate DB Key using ModelVersion ID
-		if pd.CleanedVersion.ID == 0 {
-			log.Warnf("Skipping potential download %s for model %s - missing ModelVersion ID.", pd.File.Name, pd.ModelName)
-			continue
-		}
-		// Use prefix "v_" to distinguish version keys
-		dbKey := fmt.Sprintf("v_%d", pd.CleanedVersion.ID)
-
-		// Check database
-		// Get retrieves raw bytes, unmarshaling happens later if needed
-		rawValue, err := db.Get([]byte(dbKey)) // Note: db.Get returns raw bytes
-
-		shouldQueue := false
-		// Use errors.Is to check for the specific ErrNotFound error from our database package
-		if errors.Is(err, database.ErrNotFound) {
-			log.Debugf("Model Version %d (Key: %s) not found in DB. Queuing for download.", pd.CleanedVersion.ID, dbKey)
-			shouldQueue = true
-			// Create initial entry using the correct DatabaseEntry fields
-			newEntry := models.DatabaseEntry{
-				ModelName:    pd.ModelName,
-				ModelType:    pd.ModelType,
-				Version:      pd.CleanedVersion,                // Store the cleaned version struct
-				File:         pd.File,                          // Store the file struct
-				Timestamp:    time.Now().Unix(),                // Use Unix timestamp for AddedAt
-				Creator:      pd.Creator,                       // Store the creator struct
-				Filename:     filepath.Base(pd.TargetFilepath), // Use the calculated filename
-				Folder:       pd.Slug,                          // Use the calculated folder slug
-				Status:       models.StatusPending,             // Use constant
-				ErrorDetails: "",                               // Use correct field name
-			}
-			// Marshal the new entry to JSON before putting into DB
-			entryBytes, marshalErr := json.Marshal(newEntry)
-			if marshalErr != nil {
-				log.WithError(marshalErr).Errorf("Failed to marshal new DB entry for key %s", dbKey)
-				continue // Skip queuing if marshalling fails
-			}
-			// Put the marshalled bytes
-			if errPut := db.Put([]byte(dbKey), entryBytes); errPut != nil {
-				log.WithError(errPut).Errorf("Failed to add pending entry to DB for key %s", dbKey)
-				// Decide if we should still attempt download? Maybe not.
-				continue // Skip queuing if DB write fails
-			}
-		} else if err != nil {
-			// Handle other potential DB errors during Get
-			log.WithError(err).Errorf("Error checking database for key %s", dbKey)
-			continue // Skip this file on DB error
-		} else {
-			// Entry exists, unmarshal it
-			var entry models.DatabaseEntry
-			if unmarshalErr := json.Unmarshal(rawValue, &entry); unmarshalErr != nil {
-				log.WithError(unmarshalErr).Errorf("Failed to unmarshal existing DB entry for key %s", dbKey)
-				continue // Skip if we can't parse the existing entry
-			}
-
-			log.Debugf("Model Version %d (Key: %s) found in DB with status: %s", entry.Version.ID, dbKey, entry.Status)
-			switch entry.Status {
-			case models.StatusDownloaded:
-				log.Debugf("DB Status for %s (VersionID: %d, Key: %s) is Downloaded. Checking filesystem...", pd.FinalBaseFilename, pd.CleanedVersion.ID, dbKey)
-
-				// Construct the path using the FILENAME STORED IN THE DB ENTRY, which includes the prepended ID.
-				expectedPathFromDB := filepath.Join(filepath.Dir(pd.TargetFilepath), entry.Filename)
-				log.Debugf("Checking for file existence at: %s (based on DB entry filename)", expectedPathFromDB)
-
-				// Check if the file *actually* exists on disk using the DB filename
-				if _, statErr := os.Stat(expectedPathFromDB); os.IsNotExist(statErr) {
-					// File is missing despite DB saying downloaded!
-					log.Warnf("File %s marked as downloaded in DB (Key: %s), but not found on disk! Re-queuing.", expectedPathFromDB, dbKey)
-					shouldQueue = true
-					// Update status back to Pending and clear error
-					entry.Status = models.StatusPending
-					entry.ErrorDetails = ""
-					// Update other fields that might change
-					// --- Calculate correct folder path (type/model) --- NEW
-					modelTypeNameSlug := helpers.ConvertToSlug(pd.ModelType)
-					modelNameSlug := pd.Slug // pd.Slug should already be the model name slug
-					folderPathPart := filepath.Join(modelTypeNameSlug, modelNameSlug)
-					// --- End Calculation ---
-					entry.Folder = folderPathPart
-					entry.Version = pd.FullVersion
-					entry.File = pd.File
-					// Update DB entry to reflect Pending status
-					entryBytes, marshalErr := json.Marshal(entry)
-					if marshalErr != nil {
-						log.WithError(marshalErr).Errorf("Failed to marshal entry for re-queue update (missing file) %s", dbKey)
-						shouldQueue = false // Don't queue if marshalling fails
-					} else if errUpdate := db.Put([]byte(dbKey), entryBytes); errUpdate != nil {
-						log.WithError(errUpdate).Errorf("Failed to update DB entry to Pending (missing file) for key %s", dbKey)
-						shouldQueue = false // Don't queue if update fails
-					}
-					// End of handling missing file
-				} else if statErr == nil {
-					// File *does* exist, proceed with original skip logic + metadata check
-					log.Infof("Skipping %s (VersionID: %d, Key: %s) - File exists and DB status is Downloaded.", pd.TargetFilepath, pd.CleanedVersion.ID, dbKey)
-					// Update fields that might change between runs
-					// --- Calculate correct folder path (type/model) --- NEW
-					modelTypeNameSlug := helpers.ConvertToSlug(pd.ModelType)
-					modelNameSlug := pd.Slug // pd.Slug should already be the model name slug
-					folderPathPart := filepath.Join(modelTypeNameSlug, modelNameSlug)
-					// --- End Calculation ---
-					entry.Folder = folderPathPart
-					entry.Version = pd.FullVersion
-					entry.File = pd.File // Update file details (URL might change)
-
-					// --- START: Save Metadata Check for Existing Download ---
-					// Check if metadata saving is enabled from the config
-					if cfg.Download.SaveMetadata {
-						// Derive metadata path from the expected path based on the DB entry filename
-						metadataPath := strings.TrimSuffix(expectedPathFromDB, filepath.Ext(expectedPathFromDB)) + ".json"
-
-						if _, metaStatErr := os.Stat(metadataPath); os.IsNotExist(metaStatErr) {
-							log.Infof("Model file exists, but metadata %s is missing. Saving metadata.", filepath.Base(metadataPath))
-							// Marshal the FULL version info from the potential download struct
-							jsonData, jsonErr := json.MarshalIndent(pd.FullVersion, "", "  ")
-							if jsonErr != nil {
-								log.WithError(jsonErr).Warnf("Failed to marshal full version metadata for existing file %s", pd.TargetFilepath)
-							} else {
-								if writeErr := os.WriteFile(metadataPath, jsonData, 0600); writeErr != nil {
-									log.WithError(writeErr).Warnf("Failed to write version metadata file %s", metadataPath)
-								}
-							}
-						} else if metaStatErr != nil {
-							// Log error if stating metadata file failed for other reasons
-							log.WithError(metaStatErr).Warnf("Could not check status of metadata file %s", metadataPath)
-						}
-					}
-					// --- END: Save Metadata Check for Existing Download ---
-
-					// Update the entry in the database (keeping status Downloaded)
-					entryBytes, marshalErr := json.Marshal(entry)
-					if marshalErr != nil {
-						log.WithError(marshalErr).Warnf("Failed to marshal updated downloaded entry %s", dbKey)
-					} else if errUpdate := db.Put([]byte(dbKey), entryBytes); errUpdate != nil {
-						log.WithError(errUpdate).Warnf("Failed to update metadata for downloaded entry %s", dbKey)
-					}
-					shouldQueue = false
-				} else {
-					// Some other error occurred when checking file existence
-					log.WithError(statErr).Warnf("Error checking filesystem for %s (Key: %s). Skipping queue.", pd.TargetFilepath, dbKey)
-					shouldQueue = false
-					// Optionally update DB entry here too, or just skip?
-				}
-			case models.StatusPending, models.StatusError:
-				log.Infof("Re-queuing %s (VersionID: %d, Key: %s) - Status is %s.", pd.TargetFilepath, pd.CleanedVersion.ID, dbKey, entry.Status)
-				shouldQueue = true
-				// Update status back to Pending and clear error if any
-				entry.Status = models.StatusPending
-				entry.ErrorDetails = ""
-				// Update fields that might change
-				// --- Calculate correct folder path (type/model) --- NEW
-				modelTypeNameSlug := helpers.ConvertToSlug(pd.ModelType)
-				modelNameSlug := pd.Slug // pd.Slug should already be the model name slug
-				folderPathPart := filepath.Join(modelTypeNameSlug, modelNameSlug)
-				// --- End Calculation ---
-				entry.Folder = folderPathPart  // UPDATED
-				entry.Version = pd.FullVersion // FIXED: Use FullVersion
-				entry.File = pd.File
-				// entry.Timestamp = time.Now().Unix() // Optionally update timestamp?
-
-				entryBytes, marshalErr := json.Marshal(entry)
-				if marshalErr != nil {
-					log.WithError(marshalErr).Errorf("Failed to marshal entry for re-queue update %s", dbKey)
-					shouldQueue = false // Don't queue if marshalling fails
-				} else if errUpdate := db.Put([]byte(dbKey), entryBytes); errUpdate != nil {
-					log.WithError(errUpdate).Errorf("Failed to update DB entry to Pending for key %s", dbKey)
-					shouldQueue = false // Don't queue if update fails
-				}
-			default:
-				log.Warnf("Skipping %s (VersionID: %d, Key: %s) - Unknown status '%s' in database.", pd.TargetFilepath, pd.CleanedVersion.ID, dbKey, entry.Status)
-				shouldQueue = false
-			}
-		}
-
-		if shouldQueue {
-			downloadsToQueue = append(downloadsToQueue, pd)
-			queuedSizeBytes += uint64(pd.File.SizeKB * 1024)
-			log.Debugf("Added confirmed download to queue: %s (Model: %s)", pd.File.Name, pd.ModelName)
-		}
+// saveModelInfoFile saves the complete model metadata to a JSON file.
+// It's called by the worker and uses the ModelInfoPathPattern to determine the location.
+func saveModelInfoFile(pd potentialDownload, cfg *models.Config) error {
+	// Use the FullModel from the potentialDownload struct.
+	// It should be populated, especially if it came from a full details fetch.
+	model := pd.FullModel
+	if model.ID == 0 {
+		// This is a safeguard. In practice, FullModel should be populated.
+		// If not, we can't reliably save model info.
+		log.Warnf("Cannot save model info for version %d: FullModel data is missing.", pd.ModelVersionID)
+		return fmt.Errorf("missing full model data for version %d", pd.ModelVersionID)
 	}
 
-	return downloadsToQueue, queuedSizeBytes
-}
+	// --- Path Generation using ModelInfoPathPattern ---
+	// We need to build the data map for the path generator.
+	// We use the specific version data from the potential download to ensure
+	// placeholders like {baseModel} are resolved correctly for this version.
+	data := buildPathData(&model, &pd.FullVersion, &pd.File)
 
-// saveModelInfoFile saves the full model metadata to a .json file.
-// It saves the file to {modelBaseDir}/{model.ID}.json.
-func saveModelInfoFile(model models.Model, modelBaseDir string) error {
-	// The base directory is now passed directly
-	infoDirPath := modelBaseDir
+	relModelInfoDir, err := paths.GeneratePath(cfg.Download.ModelInfoPathPattern, data)
+	if err != nil {
+		log.WithError(err).Errorf("Failed to generate model info path for model %s (ID: %d) using pattern '%s'. Skipping info save.", model.Name, model.ID, cfg.Download.ModelInfoPathPattern)
+		return err
+	}
+	infoDirPath := filepath.Join(cfg.SavePath, relModelInfoDir)
+	// --- End Path Generation ---
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(infoDirPath, 0750); err != nil {
@@ -298,8 +128,7 @@ func saveModelInfoFile(model models.Model, modelBaseDir string) error {
 		return fmt.Errorf("failed to create directory %s: %w", infoDirPath, err)
 	}
 
-	// Construct the file path within the model base directory
-	// Use {modelID}-{modelNameSlug}.json format
+	// Construct the file path: {modelID}-{modelNameSlug}.json
 	modelNameSlug := helpers.ConvertToSlug(model.Name)
 	if modelNameSlug == "" {
 		modelNameSlug = "unknown_model"
