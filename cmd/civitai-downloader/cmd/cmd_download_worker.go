@@ -18,6 +18,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// Package-level map to track processed models for model images, with a mutex for safe concurrent access.
+var (
+	processedModelImages     = make(map[int]bool)
+	processedModelImagesLock = &sync.Mutex{}
+)
+
 // updateDbEntry encapsulates the logic for getting, updating, and putting a database entry.
 // It takes the database connection, the key, the new status (string), and an optional function
 // to apply further modifications to the entry before saving.
@@ -113,6 +119,65 @@ func handleMetadataSaving(logPrefix string, pd potentialDownload, finalPath stri
 		log.Debugf("[%s] Skipping model info save (disabled by --model-info) for %s.", logPrefix, finalPath)
 	}
 }
+
+// handleModelImages handles the download of all images for a given model if the --model-images flag is set.
+// It uses a shared map to ensure images for a model are only processed once per application run.
+// It now accepts the finalPath of the downloaded file to correctly determine the parent directory.
+func handleModelImages(logPrefix string, pd potentialDownload, finalPath string, imageDownloader *downloader.Downloader, cfg *models.Config) {
+	if !cfg.Download.SaveModelImages {
+		return // Exit if the feature is not enabled
+	}
+
+	processedModelImagesLock.Lock()
+	alreadyProcessed := processedModelImages[pd.ModelID]
+	processedModelImagesLock.Unlock()
+
+	if alreadyProcessed {
+		log.Debugf("%s Model images for model ID %d already processed. Skipping.", logPrefix, pd.ModelID)
+		return
+	}
+
+	// Collect all images from all versions
+	var allModelImages []models.ModelImage
+	for _, version := range pd.FullModel.ModelVersions {
+		if len(version.Images) > 0 {
+			allModelImages = append(allModelImages, version.Images...)
+		}
+	}
+
+	if len(allModelImages) == 0 {
+		log.Debugf("%s No model images found across all versions for model %d.", logPrefix, pd.ModelID)
+		processedModelImagesLock.Lock()
+		processedModelImages[pd.ModelID] = true // Mark as processed to avoid re-checking
+		processedModelImagesLock.Unlock()
+		return
+	}
+
+	// --- Correctly determine the model's base directory ---
+	// The `finalPath` is the absolute path to the downloaded *version file*.
+	// The directory containing this file is the version-specific directory.
+	// The directory containing the version-specific directory is the model's base directory.
+	versionSpecificDir := filepath.Dir(finalPath)
+	modelBaseDir := filepath.Dir(versionSpecificDir)
+	modelImageDir := filepath.Join(modelBaseDir, "images")
+	imgLogPrefix := fmt.Sprintf("[%s-ModelImg]", logPrefix)
+
+	// Now, `modelImageDir` should be correct, e.g., `/path/to/downloads/lora/sdxl/model-name/images`
+
+	if err := os.MkdirAll(modelImageDir, 0750); err != nil {
+		log.WithError(err).Errorf("%s Failed to create directory %s for model images", imgLogPrefix, modelImageDir)
+		return
+	}
+
+	log.Infof("%s Downloading %d model images to %s", imgLogPrefix, len(allModelImages), modelImageDir)
+	imgSuccess, imgFail := downloadImages(imgLogPrefix, allModelImages, modelImageDir, imageDownloader, cfg.Download.Concurrency)
+	log.Infof("%s Finished downloading model images. Success: %d, Failures: %d", imgLogPrefix, imgSuccess, imgFail)
+
+	processedModelImagesLock.Lock()
+	processedModelImages[pd.ModelID] = true // Mark model as processed
+	processedModelImagesLock.Unlock()
+}
+
 
 // downloadWorker handles the actual download of a file and updates the database.
 // It now also accepts an imageDownloader, bleveIndex, and the config.
@@ -282,6 +347,12 @@ func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownlo
 			}
 		}
 		// --- Download Version Images --- END ---
+
+		// --- Download Model Images --- START ---
+		if finalStatus == models.StatusDownloaded {
+			handleModelImages(logPrefix, pd, finalPath, imageDownloader, cfg)
+		}
+		// --- Download Model Images --- END ---
 
 		processedCount++ // Increment counter after processing job
 		fmt.Fprintf(writer.Newline(), "Worker %d: Finished job processing.\n", id)
