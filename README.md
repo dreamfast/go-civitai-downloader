@@ -77,7 +77,6 @@ Generally arguments passed into the application will override the config file se
 | `ApiKey`                | `string`   | `""`                 | Your Civitai API Key (Required for downloading models).                                                  |
 | `SavePath`              | `string`   | `"downloads"`        | Root directory where model subdirectories (like `lora/sdxl_1.0/mymodel/`) will be saved.                 |
 | `DatabasePath`          | `string`   | `""`                 | Path to the database file. If empty, defaults to `[SavePath]/civitai.db`.                        |
-| `BleveIndexPath`        | `string`   | `""`                 | Path to the Bleve search index directory. If empty, defaults to `[SavePath]/civitai.bleve`.            |
 | `Query`                 | `string`   | `""`                 | Default search query string.                                                                            |
 | `Tag`                   | `string`   | `""`                 | Default tag to filter by. (`-t, --tag` flag)                                                           |
 | `Username`              | `string`   | `""`                 | Default username to filter by. (`-u, --username` flag)                                                 |
