@@ -6,6 +6,8 @@ This is a command-line tool written in Go to download models from Civitai.com ba
 
 Note: While I can do my best to test out, there are so many combinations using the CivitAi API. If you have any issues feel free to open an issue and I'll check it out!
 
+Check out our current release [here](https://github.com/dreamfast/go-civitai-downloader/releases/tag/v0.0.01-dev-05082025).
+
 ## Features
 
 *   **Criteria-Based Downloading:** Fetch models using filters like type, base model, NSFW status, query terms, tags, usernames, etc.
