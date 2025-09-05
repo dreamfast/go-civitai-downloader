@@ -28,7 +28,6 @@ var tagRegex = regexp.MustCompile(`\{([^}]+)\}`)
 // It returns the generated relative path string or an error if substitution fails.
 func GeneratePath(pattern string, data map[string]string) (string, error) {
 	generatedPath := pattern
-	var missingTags []string
 
 	// Find all tags in the pattern
 	matches := tagRegex.FindAllStringSubmatch(pattern, -1)
@@ -63,18 +62,12 @@ func GeneratePath(pattern string, data map[string]string) (string, error) {
 			// If slug is empty (either from missing data, empty data, or data that slugs to empty),
 			// use "empty_<tagName>" as the fallback.
 			// This ensures that an empty version.BaseModel results in "empty_basemodel".
-			missingTags = append(missingTags, tagWithBraces) // Log it as a missing/empty value
 			sanitizedValue = "empty_" + tagName
 		}
 
 		// Replace the tag in the path string
 		generatedPath = strings.ReplaceAll(generatedPath, tagWithBraces, sanitizedValue)
 	}
-
-	// Optional: Log missing tags as warnings if needed
-	// if len(missingTags) > 0 {
-	//    log.Warnf("Missing data for tags in path pattern '%s': %v. Used placeholders.", pattern, missingTags)
-	// }
 
 	// Final cleanup
 	cleanedPath := filepath.Clean(generatedPath)

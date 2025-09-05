@@ -79,7 +79,7 @@ func runImages(cmd *cobra.Command, args []string) {
 		input, _ := reader.ReadString('\n')
 		input = strings.ToLower(strings.TrimSpace(input))
 		if input != "y" {
-			log.Info("Operation cancelled by user.")
+			log.Info("Operation canceled by user.")
 			os.Exit(0)
 		}
 		log.Info("Configuration confirmed.")
@@ -290,12 +290,4 @@ func CreateImageQueryParams(cfg *models.Config) models.ImageAPIParameters {
 	log.Debugf("Created Image API Params: ModelID=%d, ModelVersionID=%d, PostID=%d, Username='%s', Limit=%d, Sort='%s', Period='%s', Nsfw='%s'",
 		params.ModelID, params.ModelVersionID, params.PostID, params.Username, params.Limit, params.Sort, params.Period, params.Nsfw)
 	return params
-}
-
-// minSafe is a helper for slicing, not general purpose min.
-func minSafe(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

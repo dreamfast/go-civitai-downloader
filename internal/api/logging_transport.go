@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"go-civitai-download/internal/helpers"
 	"io"
 	"net/http"
 	"net/http/httputil"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	sync "sync"
 	time "time"
+
+	"go-civitai-download/internal/helpers"
 
 	log "github.com/sirupsen/logrus"
 )

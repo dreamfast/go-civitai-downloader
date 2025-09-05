@@ -243,10 +243,11 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 	log.Infof("Successfully fetched details for version %d (%s) of model %s (%s)",
 		versionResponse.ID, versionResponse.Name, versionResponse.Model.Name, versionResponse.Model.Type)
 
-	var potentialDownloadsPage []potentialDownload
+	potentialDownloadsPage := make([]potentialDownload, 0, len(versionResponse.Files))
 	versionWithoutFilesImages := versionResponse
-	versionWithoutFilesImages.Files = nil
-	versionWithoutFilesImages.Images = nil
+	// Clear files and images to reduce database storage size
+	versionWithoutFilesImages.Files = []models.File{}
+	versionWithoutFilesImages.Images = []models.ModelImage{}
 
 	// Create a pseudo-Model struct for path data generation, as we only have version data here
 	pseudoModel := models.Model{
@@ -389,14 +390,15 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 	}
 	// --- Model Images Processing --- END ---
 
-	var potentialDownloadsPage []potentialDownload
+	var totalFiles int
+	for _, version := range modelResponse.ModelVersions {
+		totalFiles += len(version.Files)
+	}
+	potentialDownloadsPage := make([]potentialDownload, 0, totalFiles)
 
 	// Iterate through versions
 	for _, version := range modelResponse.ModelVersions {
 		log.Debugf("    Processing Version: %s (ID: %d)", version.Name, version.ID)
-		versionWithoutFilesImages := version // Create a copy for metadata
-		versionWithoutFilesImages.Files = nil
-		versionWithoutFilesImages.Images = nil
 
 		for _, file := range version.Files {
 			// Pass config to filter function
@@ -457,7 +459,7 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 // and prepares them for the download queue.
 // Now uses the passed config struct.
 func filterAndPrepareDownloads(potentialDownloadsPage []potentialDownload, db *database.DB, cfg *models.Config) ([]potentialDownload, uint64) {
-	var downloadsToQueueFiltered []potentialDownload
+	downloadsToQueueFiltered := make([]potentialDownload, 0, len(potentialDownloadsPage))
 	var totalSizeFiltered uint64
 
 	for _, pd := range potentialDownloadsPage {
@@ -676,7 +678,13 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 		}
 		// --- END NEW Check ---
 
-		var potentialDownloadsPage []potentialDownload
+		var totalFiles int
+		for _, model := range response.Items {
+			for _, version := range model.ModelVersions {
+				totalFiles += len(version.Files)
+			}
+		}
+		potentialDownloadsPage := make([]potentialDownload, 0, totalFiles)
 		for _, model := range response.Items {
 			if model.Creator.Username == "" {
 				model.Creator.Username = "unknown_creator"

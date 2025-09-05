@@ -4,15 +4,16 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"go-civitai-download/internal/api"
-	"go-civitai-download/internal/database"
-	"go-civitai-download/internal/downloader"
-	"go-civitai-download/internal/models"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"go-civitai-download/internal/api"
+	"go-civitai-download/internal/database"
+	"go-civitai-download/internal/downloader"
+	"go-civitai-download/internal/models"
 
 	"github.com/gosuri/uilive"
 	log "github.com/sirupsen/logrus"
@@ -303,7 +304,7 @@ func confirmDownload(downloadsToQueue []potentialDownload, cfg *models.Config) b
 		if input == "y" || input == "yes" {
 			return true
 		} else if input == "n" || input == "no" {
-			log.Info("Download cancelled by user.")
+			log.Info("Download canceled by user.")
 			return false
 		} else {
 			fmt.Println("Invalid input. Please enter 'y' or 'n'.")
@@ -397,7 +398,7 @@ func confirmParameters(cmd *cobra.Command, cfg *models.Config, queryParams model
 		if input == "y" || input == "yes" {
 			return true
 		} else if input == "n" || input == "no" {
-			log.Info("Operation cancelled by user.")
+			log.Info("Operation canceled by user.")
 			return false
 		} else {
 			fmt.Println("Invalid input. Please enter 'y' or 'n'.")
@@ -503,7 +504,7 @@ func setupDownloadContext(cmd *cobra.Command, cfg *models.Config) (*http.Client,
 
 	// Confirm Parameters (Handles --show-config)
 	if !confirmParameters(cmd, cfg, queryParams) {
-		return nil, queryParams, fmt.Errorf("user cancelled or show-config mode")
+		return nil, queryParams, fmt.Errorf("user canceled or show-config mode")
 	}
 
 	return sharedHttpClient, queryParams, nil
@@ -564,7 +565,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	sharedHttpClient, _, err := setupDownloadContext(cmd, cfg)
 	if err != nil {
 		// Check if this is a controlled exit (debug mode or user cancellation)
-		if err.Error() == "debug mode - exiting after URL print" || err.Error() == "user cancelled or show-config mode" {
+		if err.Error() == "debug mode - exiting after URL print" || err.Error() == "user canceled or show-config mode" {
 			return nil
 		}
 		return err

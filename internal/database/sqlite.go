@@ -46,7 +46,9 @@ func Open(path string) (*DB, error) {
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			log.WithError(closeErr).Warn("Failed to close database after ping failure")
+		}
 		return nil, fmt.Errorf("failed to ping sqlite database at %s: %w", path, err)
 	}
 
@@ -54,7 +56,9 @@ func Open(path string) (*DB, error) {
 
 	// Initialize schema
 	if err := dbWrapper.initSchema(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			log.WithError(closeErr).Warn("Failed to close database after schema initialization failure")
+		}
 		return nil, fmt.Errorf("failed to initialize database schema: %w", err)
 	}
 
@@ -305,7 +309,9 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 
 	// Parse trained words JSON
 	if trainedWordsJSON.Valid {
-		json.Unmarshal([]byte(trainedWordsJSON.String), &entry.Version.TrainedWords)
+		if err := json.Unmarshal([]byte(trainedWordsJSON.String), &entry.Version.TrainedWords); err != nil {
+			log.WithError(err).Warnf("Failed to unmarshal trained words JSON for key %s", key)
+		}
 	}
 
 	// Get file data
@@ -441,7 +447,11 @@ func (d *DB) putDatabaseEntry(key string, value []byte) error {
 	if err != nil {
 		return fmt.Errorf("error starting transaction for key %s: %w", key, err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			log.WithError(rollbackErr).Debugf("Transaction rollback error for key %s (this may be expected if transaction was committed)", key)
+		}
+	}()
 
 	// Marshal trained words to JSON
 	trainedWordsJSON, _ := json.Marshal(entry.Version.TrainedWords)

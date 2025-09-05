@@ -12,6 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	logFormatText = "text"
+)
+
 // cfgFile holds the path to the config file specified by the user
 var cfgFile string
 
@@ -61,7 +65,7 @@ func init() {
 	// Define persistent flags, binding them to global variables.
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config.toml", "Configuration file path")
 	rootCmd.PersistentFlags().StringVar(&logLevelFlagValue, "log-level", "info", "Logging level (trace, debug, info, warn, error, fatal, panic)")
-	rootCmd.PersistentFlags().StringVar(&logFormatFlagValue, "log-format", "text", "Logging format (text, json)")
+	rootCmd.PersistentFlags().StringVar(&logFormatFlagValue, "log-format", logFormatText, "Logging format (text, json)")
 	rootCmd.PersistentFlags().BoolVar(&logApiFlag, "log-api", false, "Log API requests/responses to api.log (overrides config)")
 	rootCmd.PersistentFlags().StringVar(&savePathFlag, "save-path", "", "Directory to save models (overrides config)")                                        // Default empty string
 	rootCmd.PersistentFlags().IntVar(&apiDelayFlag, "api-delay", -1, "Delay between API calls in ms (overrides config, -1 uses config default)")              // Default -1
@@ -338,7 +342,7 @@ func applyPersistentFlags(cmd *cobra.Command, flags *config.CliFlags) {
 		flags.LogLevel = &logLevelFlagValue
 	}
 
-	if logFormatFlagValue != "text" {
+	if logFormatFlagValue != logFormatText {
 		flags.LogFormat = &logFormatFlagValue
 	}
 
@@ -478,7 +482,7 @@ func configureLoggingFromFlags(levelStr, formatStr string) {
 	switch formatStr {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
-	case "text":
+	case logFormatText:
 		log.SetFormatter(&log.TextFormatter{
 			FullTimestamp: true,
 		})
@@ -507,7 +511,7 @@ func configureLogging(cfg *models.Config) {
 	switch cfg.LogFormat {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
-	case "text":
+	case logFormatText:
 		log.SetFormatter(&log.TextFormatter{
 			FullTimestamp: true,
 			// ForceColors:   true, // Optional: Force colors even without TTY

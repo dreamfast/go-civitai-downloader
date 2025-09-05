@@ -62,15 +62,15 @@ func updateDbEntry(db *database.DB, key string, newStatus string, updateFunc fun
 		log.Debugf("Update function applied for key '%s'", key)
 	}
 
-	// Log the entry *before* marshalling (optional, can be verbose)
+	// Log the entry *before* marshaling (optional, can be verbose)
 
-	log.Debugf("Marshalling updated entry for key '%s'...", key)
+	log.Debugf("Marshaling updated entry for key '%s'...", key)
 	updatedEntryBytes, marshalErr := json.Marshal(entry)
 	if marshalErr != nil {
 		log.WithError(marshalErr).Errorf("Failed to marshal updated DB entry '%s' (Status: %s)", key, newStatus)
 		return fmt.Errorf("failed to marshal DB entry '%s': %w", key, marshalErr)
 	}
-	log.Debugf("Successfully marshalled updated entry for key '%s' (%d bytes)", key, len(updatedEntryBytes))
+	log.Debugf("Successfully marshaled updated entry for key '%s' (%d bytes)", key, len(updatedEntryBytes))
 
 	log.Debugf("Putting updated entry for key '%s' into DB...", key)
 	if errPut := db.Put([]byte(key), updatedEntryBytes); errPut != nil {
@@ -347,7 +347,9 @@ func (ctx *WorkerContext) processJob(job downloadJob) {
 
 	// Update database if download was attempted
 	if initialDbStatus != models.StatusDownloaded {
-		ctx.updateDatabaseAfterDownload(dbKey, pd, finalPath, finalStatus, downloadErr)
+		if updateErr := ctx.updateDatabaseAfterDownload(dbKey, pd, finalPath, finalStatus, downloadErr); updateErr != nil {
+			log.WithError(updateErr).Errorf("[%s] Failed to update database after download", ctx.LogPrefix)
+		}
 	}
 
 	// Handle post-download operations
