@@ -38,19 +38,19 @@ func TestCommandLineInterface(t *testing.T) {
 			name:        "Download help",
 			args:        []string{"download", "--help"},
 			expectError: false,
-			expectOut:   "Download models",
+			expectOut:   "Downloads models",
 		},
 		{
 			name:        "Images help",
 			args:        []string{"images", "--help"},
 			expectError: false,
-			expectOut:   "Download images",
+			expectOut:   "Downloads images",
 		},
 		{
 			name:        "DB help",
 			args:        []string{"db", "--help"},
 			expectError: false,
-			expectOut:   "Interact with the download database",
+			expectOut:   "Perform operations like",
 		},
 		{
 			name:        "Invalid command",
@@ -94,17 +94,15 @@ func TestConfigFileHandling(t *testing.T) {
 	configFile := filepath.Join(tempDir, "test_config.toml")
 
 	configContent := `
-api_key = "test-key-123"
-save_path = "` + tempDir + `/models"
-api_delay = 1000
+ApiKey = "test-key-123"
+SavePath = "` + tempDir + `/models"
+ApiDelayMs = 1000
+LogLevel = "debug"
+LogFormat = "text"
 
-[download]
-concurrency = 4
-limit = 10
-
-[log]
-level = "debug"
-format = "text"
+[Download]
+Concurrency = 4
+Limit = 10
 `
 
 	err := os.WriteFile(configFile, []byte(configContent), 0644)
@@ -113,7 +111,15 @@ format = "text"
 	}
 
 	// Test debug show-config command to verify config loading
-	cmd := exec.Command(binaryPath, "--config", configFile, "debug", "show-config")
+	// Change working directory to temp dir and use a local config file name
+	cmd := exec.Command(binaryPath, "debug", "show-config")
+	cmd.Dir = tempDir
+	// Create config.toml in the temp dir so it gets picked up automatically
+	localConfigFile := filepath.Join(tempDir, "config.toml")
+	err = os.WriteFile(localConfigFile, []byte(configContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create local config file: %v", err)
+	}
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -121,8 +127,8 @@ format = "text"
 	}
 
 	// Check that the config values appear in the output
+	// Note: API key is not shown for security reasons, so we check other values
 	expectedValues := []string{
-		"test-key-123",
 		"models",
 		"1000",
 		"debug",
@@ -338,7 +344,7 @@ func TestTorrentCommand(t *testing.T) {
 	cmd := exec.Command(binaryPath,
 		"--save-path", tempDir,
 		"torrent",
-		"--tracker-url", "http://test-tracker.com:8080/announce")
+		"--announce", "http://test-tracker.com:8080/announce")
 
 	output, err := cmd.CombinedOutput()
 

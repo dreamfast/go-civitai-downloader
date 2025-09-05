@@ -235,7 +235,7 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 
 // -- Hashing Helper --
 func calculateHash(filePath string, hashAlgo hash.Hash) (string, error) {
-	file, err := os.Open(SanitizePath(filePath))
+	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("opening file %s for hashing: %w", filePath, err)
 	}
