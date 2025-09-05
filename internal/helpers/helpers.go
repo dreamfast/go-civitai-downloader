@@ -99,8 +99,8 @@ func CheckHash(filePath string, hashes models.Hashes) bool {
 // It's used to display download progress.
 // Note: Consider moving this to the 'downloader' package later.
 type CounterWriter struct {
-	Total  uint64
-	Writer io.Writer
+	Writer io.Writer // Put interface first (8 bytes on 64-bit)
+	Total  uint64    // Then 8-byte integer
 }
 
 // Write implements the io.Writer interface for CounterWriter.

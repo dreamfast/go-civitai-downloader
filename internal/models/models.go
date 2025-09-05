@@ -8,74 +8,78 @@ import (
 type (
 	// Config holds the application's configuration settings.
 	Config struct {
-		// Global settings
-		APIKey              string `toml:"ApiKey" json:"ApiKey"`
-		SavePath            string `toml:"SavePath" json:"SavePath"`
-		DatabasePath        string `toml:"DatabasePath" json:"DatabasePath"`
-		BleveIndexPath      string `toml:"BleveIndexPath" json:"BleveIndexPath"`
-		LogApiRequests      bool   `toml:"LogApiRequests" json:"LogApiRequests"`
-		LogLevel            string `toml:"LogLevel" json:"LogLevel"`
-		LogFormat           string `toml:"LogFormat" json:"LogFormat"`
-		APIDelayMs          int    `toml:"ApiDelayMs" json:"ApiDelayMs"`
-		APIClientTimeoutSec int    `toml:"ApiClientTimeoutSec" json:"ApiClientTimeoutSec"`
-		MaxRetries          int    `toml:"MaxRetries" json:"MaxRetries"`
-		InitialRetryDelayMs int    `toml:"InitialRetryDelayMs" json:"InitialRetryDelayMs"`
-
-		Download DownloadConfig `toml:"Download" json:"Download"`
-		Images   ImagesConfig   `toml:"Images" json:"Images"`
-		Torrent  TorrentConfig  `toml:"Torrent" json:"Torrent"`
-		DB       DBConfig       `toml:"DB" json:"DB"`
+		// Global settings - reordered for field alignment (strings first, then large structs, then ints, then bools)
+		APIKey              string         `toml:"ApiKey" json:"ApiKey"`
+		SavePath            string         `toml:"SavePath" json:"SavePath"`
+		DatabasePath        string         `toml:"DatabasePath" json:"DatabasePath"`
+		BleveIndexPath      string         `toml:"BleveIndexPath" json:"BleveIndexPath"`
+		LogLevel            string         `toml:"LogLevel" json:"LogLevel"`
+		LogFormat           string         `toml:"LogFormat" json:"LogFormat"`
+		Download            DownloadConfig `toml:"Download" json:"Download"`
+		Images              ImagesConfig   `toml:"Images" json:"Images"`
+		Torrent             TorrentConfig  `toml:"Torrent" json:"Torrent"`
+		DB                  DBConfig       `toml:"DB" json:"DB"`
+		APIDelayMs          int            `toml:"ApiDelayMs" json:"ApiDelayMs"`
+		APIClientTimeoutSec int            `toml:"ApiClientTimeoutSec" json:"ApiClientTimeoutSec"`
+		MaxRetries          int            `toml:"MaxRetries" json:"MaxRetries"`
+		InitialRetryDelayMs int            `toml:"InitialRetryDelayMs" json:"InitialRetryDelayMs"`
+		LogApiRequests      bool           `toml:"LogApiRequests" json:"LogApiRequests"`
 	}
 
 	// DownloadConfig holds settings specific to the 'download' command.
 	DownloadConfig struct {
-		Concurrency           int      `toml:"Concurrency"`
-		Tag                   string   `toml:"Tag"`
-		Query                 string   `toml:"Query"`
+		// Strings first
+		Tag                  string `toml:"Tag"`
+		Query                string `toml:"Query"`
+		Sort                 string `toml:"Sort"`
+		Period               string `toml:"Period"`
+		VersionPathPattern   string `toml:"VersionPathPattern"`
+		ModelInfoPathPattern string `toml:"ModelInfoPathPattern"`
+		// Slices (largest items)
 		ModelTypes            []string `toml:"ModelTypes"`
 		BaseModels            []string `toml:"BaseModels"`
 		Usernames             []string `toml:"Usernames"`
-		Nsfw                  bool     `toml:"Nsfw"`
-		Limit                 int      `toml:"Limit"`
-		MaxPages              int      `toml:"MaxPages"`
-		Sort                  string   `toml:"Sort"`
-		Period                string   `toml:"Period"`
-		ModelVersionID        int      `toml:"ModelVersionID"`
-		PrimaryOnly           bool     `toml:"PrimaryOnly"`
-		Pruned                bool     `toml:"Pruned"`
-		Fp16                  bool     `toml:"Fp16"`
-		AllVersions           bool     `toml:"AllVersions"`
 		IgnoreBaseModels      []string `toml:"IgnoreBaseModels"`
 		IgnoreFileNameStrings []string `toml:"IgnoreFileNameStrings"`
-		SkipConfirmation      bool     `toml:"SkipConfirmation"`
-		SaveMetadata          bool     `toml:"SaveMetadata"`
-		SaveModelInfo         bool     `toml:"ModelInfo"`
-		SaveVersionImages     bool     `toml:"VersionImages"`
-		SaveModelImages       bool     `toml:"ModelImages"`
-		DownloadMetaOnly      bool     `toml:"MetaOnly"`
-		VersionPathPattern    string   `toml:"VersionPathPattern"`
-		ModelInfoPathPattern  string   `toml:"ModelInfoPathPattern"`
-
-		// Fields corresponding to flags without direct config.toml entries
-		ModelID int `toml:"-"` // Flag only (`--model-id`)
+		// Integers
+		Concurrency    int `toml:"Concurrency"`
+		Limit          int `toml:"Limit"`
+		MaxPages       int `toml:"MaxPages"`
+		ModelVersionID int `toml:"ModelVersionID"`
+		ModelID        int `toml:"-"` // Flag only (`--model-id`)
+		// Bools (smallest)
+		Nsfw              bool `toml:"Nsfw"`
+		PrimaryOnly       bool `toml:"PrimaryOnly"`
+		Pruned            bool `toml:"Pruned"`
+		Fp16              bool `toml:"Fp16"`
+		AllVersions       bool `toml:"AllVersions"`
+		SkipConfirmation  bool `toml:"SkipConfirmation"`
+		SaveMetadata      bool `toml:"SaveMetadata"`
+		SaveModelInfo     bool `toml:"ModelInfo"`
+		SaveVersionImages bool `toml:"VersionImages"`
+		SaveModelImages   bool `toml:"ModelImages"`
+		DownloadMetaOnly  bool `toml:"MetaOnly"`
 	}
 
 	// ImagesConfig holds settings specific to the 'images' command.
 	// Added to config for potential future use, primarily driven by flags now.
 	ImagesConfig struct {
-		Limit          int    `toml:"Limit"`
-		PostID         int    `toml:"PostID"`
-		ModelID        int    `toml:"ModelID"`
-		ModelVersionID int    `toml:"ModelVersionID"`
-		Username       string `toml:"Username"`
-		Nsfw           string `toml:"Nsfw"`
-		Sort           string `toml:"Sort"`
-		Period         string `toml:"Period"`
-		Page           int    `toml:"Page"`
-		MaxPages       int    `toml:"MaxPages"`
-		OutputDir      string `toml:"OutputDir"`
-		Concurrency    int    `toml:"Concurrency"`
-		SaveMetadata   bool   `toml:"Metadata"`
+		// Strings first
+		Username  string `toml:"Username"`
+		Nsfw      string `toml:"Nsfw"`
+		Sort      string `toml:"Sort"`
+		Period    string `toml:"Period"`
+		OutputDir string `toml:"OutputDir"`
+		// Integers
+		Limit          int `toml:"Limit"`
+		PostID         int `toml:"PostID"`
+		ModelID        int `toml:"ModelID"`
+		ModelVersionID int `toml:"ModelVersionID"`
+		Page           int `toml:"Page"`
+		MaxPages       int `toml:"MaxPages"`
+		Concurrency    int `toml:"Concurrency"`
+		// Bools
+		SaveMetadata bool `toml:"Metadata"`
 	}
 
 	// TorrentConfig holds settings specific to the 'torrent' command.
@@ -101,40 +105,49 @@ type (
 
 	// Api Calls and Responses
 	QueryParameters struct {
-		Limit                  int      `json:"limit"`
-		Page                   int      `json:"page,omitempty"`
-		Query                  string   `json:"query,omitempty"`
-		Tag                    string   `json:"tag,omitempty"`
-		Username               string   `json:"username,omitempty"`
-		Types                  []string `json:"types,omitempty"`
-		Sort                   string   `json:"sort"`
-		Period                 string   `json:"period"`
-		PrimaryFileOnly        bool     `json:"primaryFileOnly,omitempty"`
-		AllowNoCredit          bool     `json:"allowNoCredit,omitempty"`
-		AllowDerivatives       bool     `json:"allowDerivatives,omitempty"`
-		AllowDifferentLicenses bool     `json:"allowDifferentLicenses,omitempty"`
-		AllowCommercialUse     string   `json:"allowCommercialUse,omitempty"`
-		Nsfw                   bool     `json:"nsfw"`
-		BaseModels             []string `json:"baseModels,omitempty"`
-		Cursor                 string   `json:"cursor,omitempty"`
+		// Strings first
+		Query              string `json:"query,omitempty"`
+		Tag                string `json:"tag,omitempty"`
+		Username           string `json:"username,omitempty"`
+		Sort               string `json:"sort"`
+		Period             string `json:"period"`
+		AllowCommercialUse string `json:"allowCommercialUse,omitempty"`
+		// Slices
+		Types      []string `json:"types,omitempty"`
+		BaseModels []string `json:"baseModels,omitempty"`
+		// Integers
+		Limit int `json:"limit"`
+		Page  int `json:"page,omitempty"`
+		// Bools
+		PrimaryFileOnly        bool   `json:"primaryFileOnly,omitempty"`
+		AllowNoCredit          bool   `json:"allowNoCredit,omitempty"`
+		AllowDerivatives       bool   `json:"allowDerivatives,omitempty"`
+		AllowDifferentLicenses bool   `json:"allowDifferentLicenses,omitempty"`
+		Nsfw                   bool   `json:"nsfw"`
+		Cursor                 string `json:"cursor,omitempty"`
 	}
 
 	Model struct {
-		ID                    int            `json:"id"`
-		Name                  string         `json:"name"`
-		Description           string         `json:"description"`
-		Type                  string         `json:"type"`
-		Poi                   bool           `json:"poi"`
-		Nsfw                  bool           `json:"nsfw"`
-		AllowNoCredit         bool           `json:"allowNoCredit"`
-		AllowCommercialUse    []string       `json:"allowCommercialUse"`
-		AllowDerivatives      bool           `json:"allowDerivatives"`
-		AllowDifferentLicense bool           `json:"allowDifferentLicense"`
-		Stats                 Stats          `json:"stats"`
-		Creator               Creator        `json:"creator"`
-		Tags                  []string       `json:"tags"`
-		ModelVersions         []ModelVersion `json:"modelVersions"`
-		Meta                  interface{}    `json:"meta"` // Meta can be null or an object, so we use interface{}
+		// Strings first
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Type        string `json:"type"`
+		// Slices
+		AllowCommercialUse []string       `json:"allowCommercialUse"`
+		Tags               []string       `json:"tags"`
+		ModelVersions      []ModelVersion `json:"modelVersions"`
+		// Structs
+		Stats   Stats       `json:"stats"`
+		Creator Creator     `json:"creator"`
+		Meta    interface{} `json:"meta"` // Meta can be null or an object, so we use interface{}
+		// Integer
+		ID int `json:"id"`
+		// Bools
+		Poi                   bool `json:"poi"`
+		Nsfw                  bool `json:"nsfw"`
+		AllowNoCredit         bool `json:"allowNoCredit"`
+		AllowDerivatives      bool `json:"allowDerivatives"`
+		AllowDifferentLicense bool `json:"allowDifferentLicense"`
 	}
 
 	Stats struct {
@@ -160,36 +173,44 @@ type (
 	}
 
 	ModelVersion struct {
-		ID                   int          `json:"id"`
-		ModelId              int          `json:"modelId"`
-		Name                 string       `json:"name"`
-		PublishedAt          string       `json:"publishedAt"`
-		UpdatedAt            string       `json:"updatedAt"`
-		TrainedWords         []string     `json:"trainedWords"`
-		BaseModel            string       `json:"baseModel"`
-		EarlyAccessTimeFrame int          `json:"earlyAccessTimeFrame"`
-		Description          string       `json:"description"`
-		Stats                Stats        `json:"stats"`
-		Files                []File       `json:"files"`
-		Images               []ModelImage `json:"images"`
-		DownloadUrl          string       `json:"downloadUrl"`
-		// --- ADDED: Nested model info from /model-versions/{id} endpoint ---
-		Model BaseModelInfo `json:"model"`
+		// Strings first
+		Name        string `json:"name"`
+		PublishedAt string `json:"publishedAt"`
+		UpdatedAt   string `json:"updatedAt"`
+		BaseModel   string `json:"baseModel"`
+		Description string `json:"description"`
+		DownloadUrl string `json:"downloadUrl"`
+		// Slices
+		TrainedWords []string     `json:"trainedWords"`
+		Files        []File       `json:"files"`
+		Images       []ModelImage `json:"images"`
+		// Structs
+		Stats Stats         `json:"stats"`
+		Model BaseModelInfo `json:"model"` // --- ADDED: Nested model info from /model-versions/{id} endpoint ---
+		// Integers
+		ID                   int `json:"id"`
+		ModelId              int `json:"modelId"`
+		EarlyAccessTimeFrame int `json:"earlyAccessTimeFrame"`
 	}
 
 	File struct {
-		Name              string   `json:"name"`
-		ID                int      `json:"id"`
-		SizeKB            float64  `json:"sizeKB"`
-		Type              string   `json:"type"`
-		Metadata          Metadata `json:"metadata"`
-		PickleScanResult  string   `json:"pickleScanResult"`
-		PickleScanMessage string   `json:"pickleScanMessage"`
-		VirusScanResult   string   `json:"virusScanResult"`
-		ScannedAt         string   `json:"scannedAt"`
-		Hashes            Hashes   `json:"hashes"`
-		DownloadUrl       string   `json:"downloadUrl"`
-		Primary           bool     `json:"primary"`
+		// Strings first
+		Name              string `json:"name"`
+		Type              string `json:"type"`
+		PickleScanResult  string `json:"pickleScanResult"`
+		PickleScanMessage string `json:"pickleScanMessage"`
+		VirusScanResult   string `json:"virusScanResult"`
+		ScannedAt         string `json:"scannedAt"`
+		DownloadUrl       string `json:"downloadUrl"`
+		// Structs
+		Metadata Metadata `json:"metadata"`
+		Hashes   Hashes   `json:"hashes"`
+		// Float64
+		SizeKB float64 `json:"sizeKB"`
+		// Integer
+		ID int `json:"id"`
+		// Bool
+		Primary bool `json:"primary"`
 	}
 
 	Metadata struct {
@@ -206,18 +227,24 @@ type (
 	}
 
 	ModelImage struct {
-		ID        int         `json:"id"`
-		URL       string      `json:"url"`
-		Hash      string      `json:"hash"` // Blurhash
-		Width     int         `json:"width"`
-		Height    int         `json:"height"`
-		Nsfw      bool        `json:"nsfw"`      // Keep boolean for simplicity, align with Model struct Nsfw
+		// Strings first
+		URL       string `json:"url"`
+		Hash      string `json:"hash"`      // Blurhash
+		CreatedAt string `json:"createdAt"` // Consider parsing to time.Time if needed
+		Username  string `json:"username"`
+		// Structs
+		Stats ImageStats `json:"stats"`
+		// Interfaces
 		NsfwLevel interface{} `json:"nsfwLevel"` // Changed to interface{} to handle number OR string from API
-		CreatedAt string      `json:"createdAt"` // Consider parsing to time.Time if needed
-		PostID    *int        `json:"postId"`    // Use pointer for optional field
-		Stats     ImageStats  `json:"stats"`
-		Meta      interface{} `json:"meta"` // Often unstructured JSON, use interface{}
-		Username  string      `json:"username"`
+		Meta      interface{} `json:"meta"`      // Often unstructured JSON, use interface{}
+		// Pointer to int
+		PostID *int `json:"postId"` // Use pointer for optional field
+		// Integers
+		ID     int `json:"id"`
+		Width  int `json:"width"`
+		Height int `json:"height"`
+		// Bool
+		Nsfw bool `json:"nsfw"` // Keep boolean for simplicity, align with Model struct Nsfw
 	}
 
 	ImageStats struct {

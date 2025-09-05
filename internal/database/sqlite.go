@@ -22,11 +22,11 @@ var ErrNotFound = errors.New("key not found")
 
 // DB wraps the SQLite database instance and provides helper methods.
 type DB struct {
-	db *sql.DB
-	sync.RWMutex
-	closeOnce sync.Once
-	closed    bool
-	closeErr  error
+	db           *sql.DB   // 8-byte pointer
+	closeErr     error     // 16-byte interface (pointer + type)
+	sync.RWMutex           // embedded struct (24 bytes)
+	closeOnce    sync.Once // struct with pointer (8 bytes)
+	closed       bool      // 1 byte
 }
 
 // Open initializes and returns a DB instance.
