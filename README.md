@@ -1,5 +1,27 @@
 # Go Civitai Downloader
 
+## Running On RunPod
+
+1. Create a Civitai API key: https://civitai.com/user/account
+2. Sign up for a RunPod account: https://www.runpod.io/
+3. Create a new pod using this template: https://runpod.io/console/deploy?template=1yue39xvu3&ref=ggryk725
+4. Click `Edit Template`
+5. Expand the `Public Environment Variables` section
+6. Enter your API key as `CIVITAI_API_KEY`
+7. Enter your username (or a comma-separated list of usernames) as `CIVITAI_USERNAME`
+8. Start the pod and watch the logs until it has finished downloading your content
+9. Connect to your pod and download the files to your PC
+    1. Your images will be under `/images/$CIVITAI_USERNAME`
+    2. Everything will be compressed into `/everything.zip`
+10. Stop the pod when you are done downloading files
+
+![](civitai-1.png)
+![](civitai-2.png)
+![](runpod-1.png)
+![](runpod-2.png)
+![](runpod-3.png)
+![](runpod-4.png)
+
 ## Overview
 
 This is a command-line tool written in Go to download models from Civitai.com based on specified criteria. It features a two-phase download process (metadata scan + confirmation), concurrent downloads, local database tracking, file verification, and flexible configuration via a file and command-line flags.
