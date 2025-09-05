@@ -12,7 +12,7 @@ ApiKey = ""
 # Default directory to save downloaded files. Subdirectories for type/model/version will be created inside this.
 SavePath = "downloads"
 
-# Path to the BoltDB database file used to track downloads and avoid re-downloading.
+# Path to the SQLite database file used to track downloads and avoid re-downloading.
 # If empty, defaults to "[SavePath]/civitai.db".
 DatabasePath = "civitai.db"
 
