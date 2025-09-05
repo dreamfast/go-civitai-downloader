@@ -364,18 +364,18 @@ func getTestAPIKey(t *testing.T) string {
 // TestAPIErrorHandling tests various API error conditions
 func TestAPIErrorHandling(t *testing.T) {
 	tests := []struct {
+		expectedError error
 		name          string
 		statusCode    int
-		expectedError error
 		shouldRetry   bool
 	}{
-		{"Success", http.StatusOK, nil, false},
-		{"Rate Limited", http.StatusTooManyRequests, ErrRateLimited, true},
-		{"Unauthorized", http.StatusUnauthorized, ErrUnauthorized, false},
-		{"Forbidden", http.StatusForbidden, ErrUnauthorized, false},
-		{"Not Found", http.StatusNotFound, ErrNotFound, false},
-		{"Server Error", http.StatusInternalServerError, ErrServerError, true},
-		{"Service Unavailable", http.StatusServiceUnavailable, ErrServerError, true},
+		{nil, "Success", http.StatusOK, false},
+		{ErrRateLimited, "Rate Limited", http.StatusTooManyRequests, true},
+		{ErrUnauthorized, "Unauthorized", http.StatusUnauthorized, false},
+		{ErrUnauthorized, "Forbidden", http.StatusForbidden, false},
+		{ErrNotFound, "Not Found", http.StatusNotFound, false},
+		{ErrServerError, "Server Error", http.StatusInternalServerError, true},
+		{ErrServerError, "Service Unavailable", http.StatusServiceUnavailable, true},
 	}
 
 	for _, tt := range tests {

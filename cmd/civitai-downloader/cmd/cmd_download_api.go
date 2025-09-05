@@ -595,42 +595,44 @@ func filterAndPrepareDownloads(potentialDownloadsPage []potentialDownload, db *d
 // fetchModelsPaginated retrieves models page by page from the API.
 // ADDED userTotalLimit parameter.
 func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloader *downloader.Downloader, queryParams models.QueryParameters, cfg *models.Config, userTotalLimit int) ([]potentialDownload, uint64, error) {
+	// Handle single model cases
+	if cfg.Download.ModelID != 0 {
+		return handleSingleModelCase(cfg.Download.ModelID, cfg.Download.AllVersions, db, apiClient, imageDownloader, cfg)
+	}
+
+	// Handle paginated search
+	return handlePaginatedSearch(apiClient, db, queryParams, cfg, userTotalLimit)
+}
+
+// handleSingleModelCase handles downloading a single model by ID
+func handleSingleModelCase(modelID int, allVersions bool, db *database.DB, apiClient *api.Client, imageDownloader *downloader.Downloader, cfg *models.Config) ([]potentialDownload, uint64, error) {
+	if allVersions {
+		log.Infof("Fetching all versions for Model ID: %d", modelID)
+		return handleSingleModelDownload(modelID, db, apiClient, imageDownloader, cfg)
+	}
+
+	log.Infof("Fetching latest version for Model ID: %d", modelID)
+	modelDetails, err := apiClient.GetModelDetails(modelID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get model details for ID %d to find latest version: %w", modelID, err)
+	}
+	if len(modelDetails.ModelVersions) == 0 {
+		return nil, 0, fmt.Errorf("no versions found for model ID %d", modelID)
+	}
+
+	latestVersionID := modelDetails.ModelVersions[0].ID
+	log.Infof("Found latest version ID for model %d: %d", modelID, latestVersionID)
+	return handleSingleVersionDownload(latestVersionID, db, apiClient, cfg)
+}
+
+// handlePaginatedSearch handles the paginated API search for models
+func handlePaginatedSearch(apiClient *api.Client, db *database.DB, queryParams models.QueryParameters, cfg *models.Config, userTotalLimit int) ([]potentialDownload, uint64, error) {
 	var allPotentialDownloads []potentialDownload
 	var totalDownloadSize uint64
 	var nextCursor string
 	pageCount := 0
-	maxPages := cfg.Download.MaxPages // Use config value
-	modelID := cfg.Download.ModelID
-	allVersions := cfg.Download.AllVersions
-	// Declare response and err here
-	var response models.ApiResponse
-	var err error
+	maxPages := cfg.Download.MaxPages
 
-	// --- Handle Single Model/All Versions Case --- START ---
-	if modelID != 0 {
-		if allVersions {
-			log.Infof("Fetching all versions for Model ID: %d", modelID)
-			// Pass imageDownloader here
-			return handleSingleModelDownload(modelID, db, apiClient, imageDownloader, cfg)
-		} else {
-			// If not --all-versions, we need to get the LATEST version
-			log.Infof("Fetching latest version for Model ID: %d", modelID)
-			// Fetch the model details first to find the latest version ID
-			modelDetails, err := apiClient.GetModelDetails(modelID)
-			if err != nil {
-				return nil, 0, fmt.Errorf("failed to get model details for ID %d to find latest version: %w", modelID, err)
-			}
-			if len(modelDetails.ModelVersions) == 0 {
-				return nil, 0, fmt.Errorf("no versions found for model ID %d", modelID)
-			}
-			latestVersionID := modelDetails.ModelVersions[0].ID // API usually returns newest first
-			log.Infof("Found latest version ID for model %d: %d", modelID, latestVersionID)
-			return handleSingleVersionDownload(latestVersionID, db, apiClient, cfg)
-		}
-	}
-	// --- Handle Single Model/All Versions Case --- END ---
-
-	// If not fetching a single model, proceed with paginated search
 	log.Infof("Starting paginated model fetch. Max pages: %d", maxPages)
 
 	for {
@@ -642,24 +644,14 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 
 		log.Infof("--- Fetching Model Page %d (Cursor: %s) ---", pageCount, nextCursor)
 
-		// Make the API call using the client's method
-		var newCursor string
-		newCursor, response, err = apiClient.GetModels(nextCursor, queryParams)
+		// Fetch page
+		newCursor, response, err := apiClient.GetModels(nextCursor, queryParams)
 		if err != nil {
-			// Handle specific error types from the client
-			if errors.Is(err, api.ErrRateLimited) {
-				log.Error("API Rate Limited. Consider increasing ApiDelayMs or reducing concurrency. Stopping fetch.")
-			} else if errors.Is(err, api.ErrUnauthorized) {
-				log.Error("API Unauthorized (401/403). Check your API key (ApiKey in config). Stopping fetch.")
-			} else {
-				log.WithError(err).Errorf("Failed to fetch model page %d", pageCount)
-			}
-			return allPotentialDownloads, totalDownloadSize, err // Return whatever was collected so far and the error
+			handleAPIError(err, pageCount)
+			return allPotentialDownloads, totalDownloadSize, err
 		}
 
-		// Assign the next cursor *before* the early exit check potentially clears it
 		nextCursor = newCursor
-
 		log.Debugf("Received %d models for page %d", len(response.Items), pageCount)
 
 		if len(response.Items) == 0 {
@@ -667,137 +659,25 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 			break
 		}
 
-		// --- NEW Check: Early exit for low limit without --all-versions ---
-		// If a limit is set, we are *not* fetching all versions (meaning we care about the top sorted models),
-		// it's the first page, and that page returned results, stop pagination after this page.
-		// This prevents excessive API calls when the user likely only wants the first few relevant models.
-		if userTotalLimit > 0 && !cfg.Download.AllVersions && pageCount == 1 {
-			log.Infof("Limit is %d and --all-versions=false. Processing only the first page of results to respect the limit early.", userTotalLimit)
-			// Force the loop to terminate after this page by clearing the cursor.
+		// Handle early exit for limited searches
+		if shouldExitEarly(userTotalLimit, cfg.Download.AllVersions, pageCount) {
 			nextCursor = ""
 		}
-		// --- END NEW Check ---
 
-		var totalFiles int
-		for _, model := range response.Items {
-			for _, version := range model.ModelVersions {
-				totalFiles += len(version.Files)
-			}
-		}
-		potentialDownloadsPage := make([]potentialDownload, 0, totalFiles)
-		for _, model := range response.Items {
-			if model.Creator.Username == "" {
-				model.Creator.Username = "unknown_creator"
-			}
+		// Process models on this page
+		potentialDownloadsPage, reachedLimit := processModelsOnPage(response.Items, apiClient, cfg, userTotalLimit, len(allPotentialDownloads))
 
-			// Client-side base model filtering
-			if len(cfg.Download.IgnoreBaseModels) > 0 && len(model.ModelVersions) > 0 {
-				// Check against the first version's base model as a representative.
-				// More sophisticated filtering might require checking all versions or relying on model tags if available.
-				var representativeBaseModel string
-				for _, mv := range model.ModelVersions {
-					if mv.BaseModel != "" {
-						representativeBaseModel = mv.BaseModel
-						break
-					}
-				}
-				if representativeBaseModel != "" && helpers.StringSliceContains(cfg.Download.IgnoreBaseModels, representativeBaseModel) {
-					log.Debugf("Skipping model %s (ID: %d) due to ignored base model: %s", model.Name, model.ID, representativeBaseModel)
-					continue
-				} else if representativeBaseModel == "" {
-					log.Debugf("Model %s (ID: %d) has no versions with BaseModels specified, cannot apply base model ignore filter.", model.Name, model.ID)
-				}
-			}
-
-			// --- Fetch Full Model Details to get reliable version data ---
-			var fullModelDetails models.Model
-			log.Debugf("Fetching full details for model %d (%s) to ensure accurate version data...", model.ID, model.Name)
-			fetchedDetails, err := apiClient.GetModelDetails(model.ID)
-			if err != nil {
-				log.WithError(err).Warnf("Failed to fetch full details for model %d. Skipping this model.", model.ID)
-				continue // Skip this model entirely if we can't get its details
-			}
-			fullModelDetails = fetchedDetails
-			// --- End Fetch Full Model Details ---
-
-			// Process each version of the model
-			modelReachedLimit := false // Flag to break outer loop
-			for _, version := range fullModelDetails.ModelVersions {
-				// Process each file within the version
-				for _, file := range version.Files {
-					if !passesFileFilters(file, fullModelDetails.Type, cfg) {
-						continue
-					}
-
-					// --- Ensure ModelId is set in the version struct --- START
-					versionForPd := version // Make a copy to modify
-					if versionForPd.ModelId == 0 && fullModelDetails.ID != 0 {
-						log.Debugf("Populating missing ModelId (%d) in version data (Version ID: %d) before creating potentialDownload", fullModelDetails.ID, versionForPd.ID)
-						versionForPd.ModelId = fullModelDetails.ID
-					}
-					// --- Ensure ModelId is set in the version struct --- END
-
-					// Create potential download entry WITHOUT path info for now
-					pd := potentialDownload{
-						ModelID:        fullModelDetails.ID,
-						FullModel:      fullModelDetails,
-						ModelName:      fullModelDetails.Name,
-						ModelType:      fullModelDetails.Type,
-						Creator:        fullModelDetails.Creator,
-						FullVersion:    versionForPd,
-						ModelVersionID: versionForPd.ID,
-						File:           file,
-						OriginalImages: version.Images,
-						BaseModel:      version.BaseModel,
-						Slug:           helpers.ConvertToSlug(fullModelDetails.Name),
-						VersionName:    version.Name,
-					}
-
-					if userTotalLimit > 0 && len(allPotentialDownloads)+len(potentialDownloadsPage) >= userTotalLimit {
-						log.Infof("Reached user download limit (%d) while processing model %d. Stopping further processing for this model and page.", userTotalLimit, model.ID)
-						modelReachedLimit = true
-						break // Break inner file loop
-					}
-
-					potentialDownloadsPage = append(potentialDownloadsPage, pd)
-				}
-				if modelReachedLimit {
-					break // Break version loop
-				}
-				if !cfg.Download.AllVersions {
-					log.Debugf("Processing only latest version for model %d (%s) as --all-versions is false. Breaking version loop.", model.ID, model.Name)
-					break
-				}
-			}
-			if modelReachedLimit {
-				break // Break model loop for this page
-			}
-		}
-
-		// Filter the collected items for the page
+		// Filter and add to results
 		processedDownloads, pageDownloadSize := filterAndPrepareDownloads(potentialDownloadsPage, db, cfg)
 		allPotentialDownloads = append(allPotentialDownloads, processedDownloads...)
 		totalDownloadSize += pageDownloadSize
 
-		// --- Check if user limit reached AFTER processing this page ---
-		if userTotalLimit > 0 && len(allPotentialDownloads) >= userTotalLimit {
-			log.Infof("Reached user download limit (%d) after processing page %d. Stopping model fetch.", userTotalLimit, pageCount)
-			break // Exit the pagination loop
-		}
-		// --- End Check ---
-
-		// --- NEW SAFETY CHECK for --all-versions + --limit ---
-		if userTotalLimit > 0 && cfg.Download.AllVersions && pageCount > 1 && len(allPotentialDownloads) == 0 {
-			log.Warnf("Fetched %d pages but found 0 downloadable files matching filters while using --limit %d and --all-versions. Stopping pagination to prevent potential infinite loop. Check filters or query if this is unexpected.", pageCount, userTotalLimit)
-			break // Exit the pagination loop
-		}
-		// --- END SAFETY CHECK ---
-
-		if nextCursor == "" {
-			log.Info("No next cursor available (or loop forced to stop early), stopping model fetch.")
+		// Check various exit conditions
+		if shouldStopPagination(userTotalLimit, cfg, pageCount, len(allPotentialDownloads), nextCursor, reachedLimit) {
 			break
 		}
 
+		// API delay if configured
 		if cfg.APIDelayMs > 0 {
 			delay := time.Duration(cfg.APIDelayMs) * time.Millisecond
 			log.Debugf("Waiting %v before fetching next page...", delay)
@@ -807,6 +687,188 @@ func fetchModelsPaginated(apiClient *api.Client, db *database.DB, imageDownloade
 
 	log.Infof("Finished fetching models. Found %d potential downloads.", len(allPotentialDownloads))
 	return allPotentialDownloads, totalDownloadSize, nil
+}
+
+// handleAPIError handles different types of API errors
+func handleAPIError(err error, pageCount int) {
+	if errors.Is(err, api.ErrRateLimited) {
+		log.Error("API Rate Limited. Consider increasing ApiDelayMs or reducing concurrency. Stopping fetch.")
+	} else if errors.Is(err, api.ErrUnauthorized) {
+		log.Error("API Unauthorized (401/403). Check your API key (ApiKey in config). Stopping fetch.")
+	} else {
+		log.WithError(err).Errorf("Failed to fetch model page %d", pageCount)
+	}
+}
+
+// shouldExitEarly determines if pagination should exit early based on limit settings
+func shouldExitEarly(userTotalLimit int, allVersions bool, pageCount int) bool {
+	return userTotalLimit > 0 && !allVersions && pageCount == 1
+}
+
+// processModelsOnPage processes all models on a single page
+func processModelsOnPage(models []models.Model, apiClient *api.Client, cfg *models.Config, userTotalLimit, currentDownloadCount int) ([]potentialDownload, bool) {
+	totalFiles := calculateTotalFiles(models)
+	potentialDownloadsPage := make([]potentialDownload, 0, totalFiles)
+	reachedLimit := false
+
+	for _, model := range models {
+		if model.Creator.Username == "" {
+			model.Creator.Username = "unknown_creator"
+		}
+
+		if shouldSkipModelForBaseModel(model, cfg) {
+			continue
+		}
+
+		fullModelDetails, err := fetchFullModelDetails(model.ID, apiClient)
+		if err != nil {
+			continue
+		}
+
+		modelDownloads, modelReachedLimit := processModelVersions(fullModelDetails, cfg, userTotalLimit, currentDownloadCount+len(potentialDownloadsPage))
+		potentialDownloadsPage = append(potentialDownloadsPage, modelDownloads...)
+
+		if modelReachedLimit {
+			reachedLimit = true
+			break
+		}
+	}
+
+	return potentialDownloadsPage, reachedLimit
+}
+
+// calculateTotalFiles calculates the total number of files across all models
+func calculateTotalFiles(models []models.Model) int {
+	totalFiles := 0
+	for _, model := range models {
+		for _, version := range model.ModelVersions {
+			totalFiles += len(version.Files)
+		}
+	}
+	return totalFiles
+}
+
+// shouldSkipModelForBaseModel checks if a model should be skipped based on base model filters
+func shouldSkipModelForBaseModel(model models.Model, cfg *models.Config) bool {
+	if len(cfg.Download.IgnoreBaseModels) == 0 || len(model.ModelVersions) == 0 {
+		return false
+	}
+
+	var representativeBaseModel string
+	for _, mv := range model.ModelVersions {
+		if mv.BaseModel != "" {
+			representativeBaseModel = mv.BaseModel
+			break
+		}
+	}
+
+	if representativeBaseModel != "" && helpers.StringSliceContains(cfg.Download.IgnoreBaseModels, representativeBaseModel) {
+		log.Debugf("Skipping model %s (ID: %d) due to ignored base model: %s", model.Name, model.ID, representativeBaseModel)
+		return true
+	}
+
+	if representativeBaseModel == "" {
+		log.Debugf("Model %s (ID: %d) has no versions with BaseModels specified, cannot apply base model ignore filter.", model.Name, model.ID)
+	}
+
+	return false
+}
+
+// fetchFullModelDetails fetches complete model details from the API
+func fetchFullModelDetails(modelID int, apiClient *api.Client) (models.Model, error) {
+	log.Debugf("Fetching full details for model %d to ensure accurate version data...", modelID)
+	fullModelDetails, err := apiClient.GetModelDetails(modelID)
+	if err != nil {
+		log.WithError(err).Warnf("Failed to fetch full details for model %d. Skipping this model.", modelID)
+		return models.Model{}, err
+	}
+	return fullModelDetails, nil
+}
+
+// processModelVersions processes all versions of a model and returns potential downloads
+func processModelVersions(fullModelDetails models.Model, cfg *models.Config, userTotalLimit, currentDownloadCount int) ([]potentialDownload, bool) {
+	var potentialDownloads []potentialDownload
+
+	for _, version := range fullModelDetails.ModelVersions {
+		versionDownloads, reachedLimit := processVersionFiles(fullModelDetails, version, cfg, userTotalLimit, currentDownloadCount+len(potentialDownloads))
+		potentialDownloads = append(potentialDownloads, versionDownloads...)
+
+		if reachedLimit {
+			return potentialDownloads, true
+		}
+
+		if !cfg.Download.AllVersions {
+			log.Debugf("Processing only latest version for model %d (%s) as --all-versions is false. Breaking version loop.", fullModelDetails.ID, fullModelDetails.Name)
+			break
+		}
+	}
+
+	return potentialDownloads, false
+}
+
+// processVersionFiles processes all files in a model version
+func processVersionFiles(fullModelDetails models.Model, version models.ModelVersion, cfg *models.Config, userTotalLimit, currentDownloadCount int) ([]potentialDownload, bool) {
+	potentialDownloads := make([]potentialDownload, 0, len(version.Files))
+
+	for _, file := range version.Files {
+		if !passesFileFilters(file, fullModelDetails.Type, cfg) {
+			continue
+		}
+
+		// Ensure ModelId is set in the version struct
+		versionForPd := version
+		if versionForPd.ModelId == 0 && fullModelDetails.ID != 0 {
+			log.Debugf("Populating missing ModelId (%d) in version data (Version ID: %d) before creating potentialDownload", fullModelDetails.ID, versionForPd.ID)
+			versionForPd.ModelId = fullModelDetails.ID
+		}
+
+		pd := potentialDownload{
+			ModelID:        fullModelDetails.ID,
+			FullModel:      fullModelDetails,
+			ModelName:      fullModelDetails.Name,
+			ModelType:      fullModelDetails.Type,
+			Creator:        fullModelDetails.Creator,
+			FullVersion:    versionForPd,
+			ModelVersionID: versionForPd.ID,
+			File:           file,
+			OriginalImages: version.Images,
+			BaseModel:      version.BaseModel,
+			Slug:           helpers.ConvertToSlug(fullModelDetails.Name),
+			VersionName:    version.Name,
+		}
+
+		if userTotalLimit > 0 && currentDownloadCount+len(potentialDownloads) >= userTotalLimit {
+			log.Infof("Reached user download limit (%d) while processing model %d. Stopping further processing for this model and page.", userTotalLimit, fullModelDetails.ID)
+			return potentialDownloads, true
+		}
+
+		potentialDownloads = append(potentialDownloads, pd)
+	}
+
+	return potentialDownloads, false
+}
+
+// shouldStopPagination determines if pagination should stop based on various conditions
+func shouldStopPagination(userTotalLimit int, cfg *models.Config, pageCount, currentDownloadCount int, nextCursor string, reachedLimit bool) bool {
+	// Check if user limit reached after processing this page
+	if userTotalLimit > 0 && currentDownloadCount >= userTotalLimit {
+		log.Infof("Reached user download limit (%d) after processing page %d. Stopping model fetch.", userTotalLimit, pageCount)
+		return true
+	}
+
+	// Safety check for --all-versions + --limit
+	if userTotalLimit > 0 && cfg.Download.AllVersions && pageCount > 1 && currentDownloadCount == 0 {
+		log.Warnf("Fetched %d pages but found 0 downloadable files matching filters while using --limit %d and --all-versions. Stopping pagination to prevent potential infinite loop. Check filters or query if this is unexpected.", pageCount, userTotalLimit)
+		return true
+	}
+
+	// Check if no next cursor or reached limit
+	if nextCursor == "" {
+		log.Info("No next cursor available (or loop forced to stop early), stopping model fetch.")
+		return true
+	}
+
+	return reachedLimit
 }
 
 // CreateDownloadQueryParams extracts download-related settings from the config

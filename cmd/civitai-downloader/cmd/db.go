@@ -163,92 +163,85 @@ type verificationProblem struct {
 
 func runDbVerify(cmd *cobra.Command, args []string) {
 	log.Info("Verifying database entries against filesystem...")
-	// Read flags directly from globalConfig
-	checkHashFlag := globalConfig.DB.Verify.CheckHash           // Use config struct
-	autoRedownloadFlag := globalConfig.DB.Verify.AutoRedownload // Use config struct
 
-	// --- Basic Config Checks ---
-	if globalConfig.DatabasePath == "" {
-		log.Fatal("Database path is not set in the configuration. Please check config file or path.")
+	// Validate configuration and open database
+	db, err := initializeVerificationDatabase()
+	if err != nil {
+		log.Fatal(err)
 	}
+	defer db.Close()
+
+	// Scan database and verify files
+	stats, problemsToAddress := scanDatabaseEntries(db)
+	logInitialScanSummary(stats)
+
+	// Handle redownloads if problems found
+	if len(problemsToAddress) > 0 {
+		handleRedownloads(db, problemsToAddress, stats)
+	} else {
+		log.Info("No missing or mismatched files found requiring redownload.")
+	}
+
+	log.Info("Verification process completed.")
+}
+
+// VerificationStats holds statistics from the verification scan
+type VerificationStats struct {
+	TotalEntries      int
+	FoundOk           int
+	FoundHashMismatch int
+	Missing           int
+}
+
+// initializeVerificationDatabase validates config and opens the database
+func initializeVerificationDatabase() (*database.DB, error) {
+	if globalConfig.DatabasePath == "" {
+		return nil, fmt.Errorf("database path is not set in the configuration. Please check config file or path")
+	}
+
 	if globalConfig.SavePath == "" {
-		// Try to infer from DB path if possible (mirroring clean command logic)
 		if globalConfig.DatabasePath != "" {
 			globalConfig.SavePath = filepath.Dir(globalConfig.DatabasePath)
 			log.Warnf("SavePath is empty, inferring base directory from DatabasePath: %s", globalConfig.SavePath)
 		} else {
-			log.Fatal("Save path is not set (and cannot be inferred from DatabasePath). Please check config file or path.")
+			return nil, fmt.Errorf("save path is not set (and cannot be inferred from DatabasePath). Please check config file or path")
 		}
 	}
 
-	// --- Open Database --- (moved up)
 	db, err := database.Open(globalConfig.DatabasePath)
 	if err != nil {
-		log.WithError(err).Fatalf("Failed to open database at %s", globalConfig.DatabasePath)
+		return nil, fmt.Errorf("failed to open database at %s: %w", globalConfig.DatabasePath, err)
 	}
-	defer db.Close()
 
-	var totalEntries, foundOk, foundHashMismatch, missing int
-	var problemsToAddress []verificationProblem // List to store entries needing attention
+	return db, nil
+}
+
+// scanDatabaseEntries scans all database entries and verifies files
+func scanDatabaseEntries(db *database.DB) (VerificationStats, []verificationProblem) {
+	var stats VerificationStats
+	var problemsToAddress []verificationProblem
 
 	log.Info("Scanning database entries...")
-	// Use Fold for potentially better efficiency than Keys()
+
 	errFold := db.Fold(func(key []byte, value []byte) error {
 		keyStr := string(key)
 		if !strings.HasPrefix(keyStr, "v_") {
 			return nil // Skip non-version keys
 		}
 
-		totalEntries++
+		stats.TotalEntries++
 
 		var entry models.DatabaseEntry
-		err := json.Unmarshal(value, &entry)
-		if err != nil {
+		if err := json.Unmarshal(value, &entry); err != nil {
 			log.WithError(err).Warnf("Failed to unmarshal JSON for key %s, skipping verification for this entry.", keyStr)
 			return nil // Continue folding
 		}
 
-		// Construct the expected full path using globalConfig and entry data
-		// Ensure the path uses the stored Filename and Folder
 		expectedPath := filepath.Join(globalConfig.SavePath, entry.Folder, entry.Filename)
+		mainFileFound, hashOK, problemReason := verifyMainFile(expectedPath, entry)
 
-		// --- Check Main Model File --- (Simplified logic)
-		mainFileFound := false
-		hashOK := false
-		problemReason := ""
+		updateVerificationStats(&stats, mainFileFound, hashOK, problemReason)
 
-		_, statErr := os.Stat(expectedPath)
-		if statErr == nil {
-			// File exists
-			mainFileFound = true
-			if checkHashFlag {
-				if helpers.CheckHash(expectedPath, entry.File.Hashes) {
-					hashOK = true
-					foundOk++
-					log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Info("[OK] File exists and hash matches.")
-				} else {
-					foundHashMismatch++
-					problemReason = "Hash Mismatch"
-					log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Warn("[MISMATCH] File exists but hash mismatch.")
-				}
-			} else {
-				hashOK = true // Assume OK if not checking hash
-				foundOk++
-				log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Info("[FOUND] File exists (hash check skipped).")
-			}
-		} else if os.IsNotExist(statErr) {
-			// File does not exist
-			missing++
-			problemReason = "Missing"
-			log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Error("[MISSING] File not found.")
-		} else {
-			// Other error stating the file
-			log.WithError(statErr).Errorf("[ERROR] Could not check file status for %s", expectedPath)
-			// Optionally treat this as a problem? For now, just log error.
-		}
-		// --- End Check Main Model File ---
-
-		// --- Add to problems list if missing or mismatch --- (moved down)
 		if problemReason != "" {
 			problemsToAddress = append(problemsToAddress, verificationProblem{
 				Entry:  entry,
@@ -257,47 +250,10 @@ func runDbVerify(cmd *cobra.Command, args []string) {
 			})
 		}
 
-		// --- Check/Create Metadata File if Enabled --- (moved down, only if main file is OK)
-		if mainFileFound && hashOK && globalConfig.Download.SaveMetadata {
-			// Construct metadata filepath based on expectedPath (which already has the final filename)
-			metaFilename := strings.TrimSuffix(entry.Filename, filepath.Ext(entry.Filename)) + ".json"
-			metaFilepath := filepath.Join(globalConfig.SavePath, entry.Folder, metaFilename)
-
-			if _, metaStatErr := os.Stat(metaFilepath); metaStatErr != nil {
-				if os.IsNotExist(metaStatErr) {
-					// Metadata file missing, attempt to create it
-					log.WithField("path", metaFilepath).Warn("[METADATA MISSING] Creating metadata file...")
-					// Marshal the version info stored in the entry
-					versionToSave := entry.Version // Use the version stored in the DB entry
-					jsonData, jsonErr := json.MarshalIndent(versionToSave, "", "  ")
-					if jsonErr != nil {
-						log.WithError(jsonErr).Errorf("Failed to marshal metadata for %s", metaFilename)
-					} else {
-						// Ensure directory exists BEFORE writing
-						metaDir := filepath.Dir(metaFilepath)
-						if mkdirErr := os.MkdirAll(metaDir, 0700); mkdirErr != nil {
-							log.WithError(mkdirErr).Errorf("Failed to create directory for metadata file %s", metaFilepath)
-						} else if writeErr := os.WriteFile(metaFilepath, jsonData, 0600); writeErr != nil {
-							log.WithError(writeErr).Errorf("Failed to write metadata file %s", metaFilepath)
-						} else {
-							log.WithField("path", metaFilepath).Info("[METADATA CREATED] Successfully wrote metadata file.")
-						}
-					}
-				} else {
-					// Other error stating the metadata file
-					log.WithError(metaStatErr).Errorf("[METADATA ERROR] Could not check metadata file status for %s", metaFilepath)
-				}
-			} else {
-				// Metadata file exists
-				log.WithField("path", metaFilepath).Info("[METADATA OK] Metadata file exists.")
-			}
-		} else if globalConfig.Download.SaveMetadata && (!mainFileFound || !hashOK) {
-			// Log skipping metadata check because main file is missing or hash mismatch
-			metaFilename := strings.TrimSuffix(entry.Filename, filepath.Ext(entry.Filename)) + ".json"
-			metaFilepath := filepath.Join(globalConfig.SavePath, entry.Folder, metaFilename)
-			log.WithField("path", metaFilepath).Debug("[METADATA SKIP] Skipping metadata check/creation because main file is missing or has hash mismatch.")
+		// Handle metadata files if main file is OK
+		if mainFileFound && hashOK {
+			handleMetadataVerification(expectedPath, entry)
 		}
-		// --- End Check/Create Metadata File ---
 
 		return nil // Continue folding
 	})
@@ -306,139 +262,242 @@ func runDbVerify(cmd *cobra.Command, args []string) {
 		log.WithError(errFold).Error("Error occurred during database scan (Fold)")
 	}
 
-	log.Infof("Initial Scan Summary: Total Entries=%d, OK=%d, Missing=%d, Mismatch=%d",
-		totalEntries, foundOk, missing, foundHashMismatch)
+	return stats, problemsToAddress
+}
 
-	// --- Prompt for Redownloads --- (New Section)
-	if len(problemsToAddress) > 0 {
-		log.Infof("Found %d file(s) that are missing or have hash mismatches.", len(problemsToAddress))
+// verifyMainFile checks if the main model file exists and has correct hash
+func verifyMainFile(expectedPath string, entry models.DatabaseEntry) (bool, bool, string) {
+	checkHashFlag := globalConfig.DB.Verify.CheckHash
 
-		// --- Initialize Downloader (Lazy) ---
-		var fileDownloader *downloader.Downloader
-		var reader *bufio.Reader
-
-		if !autoRedownloadFlag {
-			reader = bufio.NewReader(os.Stdin)
-		}
-
-		var redownloadAttempts, redownloadSuccess, redownloadFail int
-
-		for _, problem := range problemsToAddress {
-			entry := problem.Entry
-			prompt := fmt.Sprintf("File '%s' (%s) - %s. Redownload? (y/N): ", entry.Filename, entry.Folder, problem.Reason)
-			confirm := false
-
-			if autoRedownloadFlag {
-				log.Infof("Auto-attempting redownload for %s (%s) due to --yes flag.", entry.Filename, entry.Folder)
-				confirm = true
+	_, statErr := os.Stat(expectedPath)
+	if statErr == nil {
+		// File exists
+		if checkHashFlag {
+			if helpers.CheckHash(expectedPath, entry.File.Hashes) {
+				log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Info("[OK] File exists and hash matches.")
+				return true, true, ""
 			} else {
-				fmt.Print(prompt)
-				input, _ := reader.ReadString('\n')
-				if strings.TrimSpace(strings.ToLower(input)) == "y" {
-					confirm = true
-				}
+				log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Warn("[MISMATCH] File exists but hash mismatch.")
+				return true, false, "Hash Mismatch"
 			}
-
-			if confirm {
-				redownloadAttempts++
-
-				// Initialize downloader only if needed
-				if fileDownloader == nil {
-					log.Debug("Initializing downloader for redownload...")
-					// Ensure globalHttpTransport is available (should be from root PersistentPreRunE)
-					if globalHttpTransport == nil {
-						log.Error("Global HTTP transport not initialized. Cannot perform redownload.")
-						// Maybe set a flag to stop further attempts?
-						redownloadFail++ // Count as fail if transport is missing
-						continue
-					}
-					// Create a client instance for the downloader using the global transport
-					httpClient := &http.Client{
-						Timeout:   0, // Rely on transport timeouts
-						Transport: globalHttpTransport,
-					}
-					fileDownloader = downloader.NewDownloader(httpClient, globalConfig.APIKey)
-					log.Debug("Downloader initialized.")
-				}
-
-				// --- Perform Redownload using existing logic ---
-				targetPath := filepath.Join(globalConfig.SavePath, entry.Folder, entry.Filename)
-				downloadUrl := entry.File.DownloadUrl
-				hashes := entry.File.Hashes
-				versionID := entry.Version.ID // Use the version ID from the entry
-				dbKey := problem.DbKey
-
-				log.Infof("Attempting redownload: %s -> %s", downloadUrl, targetPath)
-				// Ensure directory exists (important for redownload)
-				if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
-					log.WithError(err).Errorf("Failed to create directory for redownload: %s", filepath.Dir(targetPath))
-					updateErr := updateDbEntry(db, dbKey, models.StatusError, func(e *models.DatabaseEntry) {
-						e.ErrorDetails = fmt.Sprintf("Mkdir failed: %v", err)
-					})
-					if updateErr != nil {
-						// Also log error if updating DB status failed
-						log.WithError(updateErr).Errorf("Failed to update DB status to Error after mkdir failure for %s", dbKey)
-					}
-					redownloadFail++
-					continue // Next problem
-				}
-
-				finalPath, downloadErr := fileDownloader.DownloadFile(targetPath, downloadUrl, hashes, versionID)
-
-				// --- Update DB and Handle Metadata ---
-				finalStatus := models.StatusError
-				if downloadErr == nil {
-					finalStatus = models.StatusDownloaded
-					log.Infof("Redownload successful: %s", finalPath)
-					redownloadSuccess++
-				} else {
-					log.WithError(downloadErr).Errorf("Redownload failed for: %s", targetPath)
-					redownloadFail++
-				}
-
-				updateErr := updateDbEntry(db, dbKey, finalStatus, func(e *models.DatabaseEntry) {
-					if downloadErr != nil {
-						e.ErrorDetails = downloadErr.Error()
-					} else {
-						e.ErrorDetails = ""                   // Clear error on success
-						e.Filename = filepath.Base(finalPath) // Update filename if ID was prepended
-						// Update File and Version structs? Maybe not necessary here unless they changed upstream?
-					}
-				})
-				if updateErr != nil {
-					log.Errorf("Failed to update DB status after redownload attempt for %s: %v", dbKey, updateErr)
-				}
-
-				// Handle metadata saving only on successful redownload
-				if finalStatus == models.StatusDownloaded {
-					log.Debugf("Redownload successful for %s. Checking if metadata saving is enabled...", finalPath)
-					// REMOVE call to handleMetadataSaving - Verification should not save metadata.
-					/*
-						// We need a potentialDownload struct for handleMetadataSaving.
-						// Construct a simplified one from the entry.
-						pdForMeta := potentialDownload{
-							CleanedVersion: entry.Version, // Use the version from the DB entry
-						}
-						// Call handleMetadataSaving (pass nil for writer as we are not using uilive here)
-						handleMetadataSaving("VerifyRedownload", pdForMeta, finalPath, finalStatus, nil)
-					*/
-				}
-			} else {
-				log.Infof("Skipping redownload for %s (%s).", entry.Filename, entry.Folder)
-			}
-		} // End loop through problems
-
-		// --- Final Redownload Summary ---
-		if redownloadAttempts > 0 {
-			log.Infof("Redownload Phase Summary: Attempts=%d, Success=%d, Failed=%d",
-				redownloadAttempts, redownloadSuccess, redownloadFail)
+		} else {
+			log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Info("[FOUND] File exists (hash check skipped).")
+			return true, true, ""
 		}
-
+	} else if os.IsNotExist(statErr) {
+		log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Error("[MISSING] File not found.")
+		return false, false, "Missing"
 	} else {
-		log.Info("No missing or mismatched files found requiring redownload.")
+		log.WithError(statErr).Errorf("[ERROR] Could not check file status for %s", expectedPath)
+		return false, false, ""
+	}
+}
+
+// updateVerificationStats updates the verification statistics
+func updateVerificationStats(stats *VerificationStats, mainFileFound, hashOK bool, problemReason string) {
+	if mainFileFound && hashOK {
+		stats.FoundOk++
+	} else if mainFileFound && !hashOK {
+		stats.FoundHashMismatch++
+	} else if problemReason == "Missing" {
+		stats.Missing++
+	}
+}
+
+// handleMetadataVerification handles verification and creation of metadata files
+func handleMetadataVerification(expectedPath string, entry models.DatabaseEntry) {
+	if !globalConfig.Download.SaveMetadata {
+		return
 	}
 
-	log.Info("Verification process completed.")
+	metaFilename := strings.TrimSuffix(entry.Filename, filepath.Ext(entry.Filename)) + ".json"
+	metaFilepath := filepath.Join(globalConfig.SavePath, entry.Folder, metaFilename)
+
+	if _, metaStatErr := os.Stat(metaFilepath); metaStatErr != nil {
+		if os.IsNotExist(metaStatErr) {
+			createMetadataFile(metaFilepath, entry.Version)
+		} else {
+			log.WithError(metaStatErr).Errorf("[METADATA ERROR] Could not check metadata file status for %s", metaFilepath)
+		}
+	} else {
+		log.WithField("path", metaFilepath).Info("[METADATA OK] Metadata file exists.")
+	}
+}
+
+// createMetadataFile creates a metadata file for a model version
+func createMetadataFile(metaFilepath string, version models.ModelVersion) {
+	log.WithField("path", metaFilepath).Warn("[METADATA MISSING] Creating metadata file...")
+
+	jsonData, err := json.MarshalIndent(version, "", "  ")
+	if err != nil {
+		log.WithError(err).Errorf("Failed to marshal metadata for %s", filepath.Base(metaFilepath))
+		return
+	}
+
+	metaDir := filepath.Dir(metaFilepath)
+	if err := os.MkdirAll(metaDir, 0700); err != nil {
+		log.WithError(err).Errorf("Failed to create directory for metadata file %s", metaFilepath)
+		return
+	}
+
+	if err := os.WriteFile(metaFilepath, jsonData, 0600); err != nil {
+		log.WithError(err).Errorf("Failed to write metadata file %s", metaFilepath)
+		return
+	}
+
+	log.WithField("path", metaFilepath).Info("[METADATA CREATED] Successfully wrote metadata file.")
+}
+
+// logInitialScanSummary logs the summary of the initial scan
+func logInitialScanSummary(stats VerificationStats) {
+	log.Infof("Initial Scan Summary: Total Entries=%d, OK=%d, Missing=%d, Mismatch=%d",
+		stats.TotalEntries, stats.FoundOk, stats.Missing, stats.FoundHashMismatch)
+}
+
+// handleRedownloads processes files that need to be redownloaded
+func handleRedownloads(db *database.DB, problemsToAddress []verificationProblem, stats VerificationStats) {
+	autoRedownloadFlag := globalConfig.DB.Verify.AutoRedownload
+
+	log.Infof("Found %d file(s) that are missing or have hash mismatches.", len(problemsToAddress))
+
+	var fileDownloader *downloader.Downloader
+	var reader *bufio.Reader
+
+	if !autoRedownloadFlag {
+		reader = bufio.NewReader(os.Stdin)
+	}
+
+	redownloadStats := processRedownloadRequests(db, problemsToAddress, &fileDownloader, reader, autoRedownloadFlag)
+	logRedownloadSummary(redownloadStats)
+}
+
+// RedownloadStats holds statistics for redownload operations
+type RedownloadStats struct {
+	Attempts int
+	Success  int
+	Fail     int
+}
+
+// processRedownloadRequests processes each redownload request
+func processRedownloadRequests(db *database.DB, problems []verificationProblem, fileDownloader **downloader.Downloader, reader *bufio.Reader, autoRedownload bool) RedownloadStats {
+	var stats RedownloadStats
+
+	for _, problem := range problems {
+		if shouldRedownload(problem, reader, autoRedownload) {
+			stats.Attempts++
+
+			if *fileDownloader == nil {
+				*fileDownloader = initializeDownloader()
+				if *fileDownloader == nil {
+					stats.Fail++
+					continue
+				}
+			}
+
+			success := performRedownload(db, problem, *fileDownloader)
+			if success {
+				stats.Success++
+			} else {
+				stats.Fail++
+			}
+		} else {
+			log.Infof("Skipping redownload for %s (%s).", problem.Entry.Filename, problem.Entry.Folder)
+		}
+	}
+
+	return stats
+}
+
+// shouldRedownload determines if a file should be redownloaded
+func shouldRedownload(problem verificationProblem, reader *bufio.Reader, autoRedownload bool) bool {
+	if autoRedownload {
+		log.Infof("Auto-attempting redownload for %s (%s) due to --yes flag.", problem.Entry.Filename, problem.Entry.Folder)
+		return true
+	}
+
+	prompt := fmt.Sprintf("File '%s' (%s) - %s. Redownload? (y/N): ", problem.Entry.Filename, problem.Entry.Folder, problem.Reason)
+	fmt.Print(prompt)
+	input, _ := reader.ReadString('\n')
+	return strings.TrimSpace(strings.ToLower(input)) == "y"
+}
+
+// initializeDownloader initializes the file downloader
+func initializeDownloader() *downloader.Downloader {
+	log.Debug("Initializing downloader for redownload...")
+
+	if globalHttpTransport == nil {
+		log.Error("Global HTTP transport not initialized. Cannot perform redownload.")
+		return nil
+	}
+
+	httpClient := &http.Client{
+		Timeout:   0,
+		Transport: globalHttpTransport,
+	}
+
+	log.Debug("Downloader initialized.")
+	return downloader.NewDownloader(httpClient, globalConfig.APIKey)
+}
+
+// performRedownload performs the actual redownload of a file
+func performRedownload(db *database.DB, problem verificationProblem, fileDownloader *downloader.Downloader) bool {
+	entry := problem.Entry
+	targetPath := filepath.Join(globalConfig.SavePath, entry.Folder, entry.Filename)
+
+	log.Infof("Attempting redownload: %s -> %s", entry.File.DownloadUrl, targetPath)
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
+		log.WithError(err).Errorf("Failed to create directory for redownload: %s", filepath.Dir(targetPath))
+		updateDbEntryError(db, problem.DbKey, fmt.Sprintf("Mkdir failed: %v", err))
+		return false
+	}
+
+	finalPath, downloadErr := fileDownloader.DownloadFile(targetPath, entry.File.DownloadUrl, entry.File.Hashes, entry.Version.ID)
+
+	finalStatus := models.StatusError
+	if downloadErr == nil {
+		finalStatus = models.StatusDownloaded
+		log.Infof("Redownload successful: %s", finalPath)
+	} else {
+		log.WithError(downloadErr).Errorf("Redownload failed for: %s", targetPath)
+	}
+
+	updateDbEntryAfterRedownload(db, problem.DbKey, finalStatus, finalPath, downloadErr)
+	return downloadErr == nil
+}
+
+// updateDbEntryError updates database entry with error status
+func updateDbEntryError(db *database.DB, dbKey, errorMsg string) {
+	updateErr := updateDbEntry(db, dbKey, models.StatusError, func(e *models.DatabaseEntry) {
+		e.ErrorDetails = errorMsg
+	})
+	if updateErr != nil {
+		log.WithError(updateErr).Errorf("Failed to update DB status to Error for %s", dbKey)
+	}
+}
+
+// updateDbEntryAfterRedownload updates database entry after redownload attempt
+func updateDbEntryAfterRedownload(db *database.DB, dbKey, finalStatus, finalPath string, downloadErr error) {
+	updateErr := updateDbEntry(db, dbKey, finalStatus, func(e *models.DatabaseEntry) {
+		if downloadErr != nil {
+			e.ErrorDetails = downloadErr.Error()
+		} else {
+			e.ErrorDetails = ""
+			e.Filename = filepath.Base(finalPath)
+		}
+	})
+	if updateErr != nil {
+		log.Errorf("Failed to update DB status after redownload attempt for %s: %v", dbKey, updateErr)
+	}
+}
+
+// logRedownloadSummary logs the summary of redownload operations
+func logRedownloadSummary(stats RedownloadStats) {
+	if stats.Attempts > 0 {
+		log.Infof("Redownload Phase Summary: Attempts=%d, Success=%d, Failed=%d",
+			stats.Attempts, stats.Success, stats.Fail)
+	}
 }
 
 func runDbRedownload(cmd *cobra.Command, args []string) {
