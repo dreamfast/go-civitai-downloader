@@ -59,20 +59,20 @@ const (
 	DefaultConfigDownloadTrainedWordsPathPattern = "{{.CreatorName}}/{{.ModelName}}/{{.VersionName}}/{{.TrainedWordsFilename}}"
 
 	// Images specific defaults
-	DefaultConfigImagesLimit            = 100
-	DefaultConfigImagesPostID           = 0
-	DefaultConfigImagesModelID          = 0
-	DefaultConfigImagesModelVersionID   = 0
-	DefaultConfigImagesUsername         = ""
-	DefaultConfigImagesNsfw             = "None" // API values: "None", "Soft", "Mature", "X"
-	DefaultConfigImagesSort             = "Newest"
-	DefaultConfigImagesPeriod           = "AllTime"
-	DefaultConfigImagesPage             = 1
-	DefaultConfigImagesMaxPages         = 10
-	DefaultConfigImagesOutputDir        = "" // Empty means SavePath/images
-	DefaultConfigImagesConcurrency      = 5
-	DefaultConfigImagesSaveMetadata     = true
-	DefaultConfigImagesPathPattern      = "{username}/{baseModel}" // Simple pattern using data from images API
+	DefaultConfigImagesLimit          = 100
+	DefaultConfigImagesPostID         = 0
+	DefaultConfigImagesModelID        = 0
+	DefaultConfigImagesModelVersionID = 0
+	DefaultConfigImagesUsername       = ""
+	DefaultConfigImagesNsfw           = "None" // API values: "None", "Soft", "Mature", "X"
+	DefaultConfigImagesSort           = "Newest"
+	DefaultConfigImagesPeriod         = "AllTime"
+	DefaultConfigImagesPage           = 1
+	DefaultConfigImagesMaxPages       = 10
+	DefaultConfigImagesOutputDir      = "" // Empty means SavePath/images
+	DefaultConfigImagesConcurrency    = 5
+	DefaultConfigImagesSaveMetadata   = true
+	DefaultConfigImagesPathPattern    = "{username}/{baseModel}" // Simple pattern using data from images API
 
 	// Torrent specific defaults
 	DefaultConfigTorrentOutputDir         = "torrents"

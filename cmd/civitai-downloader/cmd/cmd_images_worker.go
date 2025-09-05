@@ -57,7 +57,7 @@ func imageDownloadWorker(
 			"baseModel": job.Metadata.BaseModel,
 			"imageId":   strconv.Itoa(job.ImageID),
 		}
-		
+
 		// Fallback values for missing data
 		if imageData["username"] == "" {
 			imageData["username"] = "unknown_user"
