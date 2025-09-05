@@ -152,7 +152,6 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 			// --- Derive the MODEL directory path ---
 			// Assumes Folder structure is like: type/modelName/baseModel/versionSlug
 			// We want: savePath/type/modelName
-			// versionDir := filepath.Join(savePath, entry.Folder) // Removed unused variable
 			// Need to handle potential variations in depth, e.g. if Base Model isn't used as a dir level
 			// Let's assume the first component of entry.Folder is the type, and the second is the model name slug.
 			folderParts := strings.Split(entry.Folder, string(filepath.Separator))
@@ -196,9 +195,9 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 						"modelName": entry.ModelName, // Use ModelName from entry
 						"directory": modelDir,
 					},
-					ModelID:    entry.ModelID,
-					ModelName:  entry.ModelName,
-					ModelType:  modelType, // Store the determined model type
+					ModelID:   entry.ModelID,
+					ModelName: entry.ModelName,
+					ModelType: modelType, // Store the determined model type
 				}
 				modelDirsToProcess[modelDir] = job
 			}

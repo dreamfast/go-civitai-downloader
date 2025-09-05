@@ -18,7 +18,7 @@ import (
 // Default values for configuration
 const (
 	DefaultSavePath            = "models"
-	DefaultDatabasePath        = "civitai.db"    // Relative to SavePath if not absolute
+	DefaultDatabasePath        = "civitai.db" // Relative to SavePath if not absolute
 	DefaultLogApiRequests      = false
 	DefaultAPIDelayMs          = 500 // milliseconds
 	DefaultAPIClientTimeoutSec = 60  // seconds
@@ -100,7 +100,7 @@ const (
 func setViperDefaults(v *viper.Viper) {
 	v.SetDefault("apikey", "")
 	v.SetDefault("savepath", DefaultSavePath)
-	v.SetDefault("databasepath", DefaultDatabasePath)     // Will be made absolute later if relative
+	v.SetDefault("databasepath", DefaultDatabasePath) // Will be made absolute later if relative
 	v.SetDefault("logapirequests", DefaultLogApiRequests)
 	v.SetDefault("apidelayms", DefaultAPIDelayMs)
 	v.SetDefault("apiclienttimeoutsec", DefaultAPIClientTimeoutSec)

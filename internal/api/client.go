@@ -45,13 +45,87 @@ func NewClient(apiKey string, httpClient *http.Client, cfg models.Config) *Clien
 	}
 }
 
+// RetryableHTTPRequest executes an HTTP request with unified retry logic
+func (c *Client) RetryableHTTPRequest(req *http.Request) (*http.Response, error) {
+	const maxRetries = 3
+
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		resp, err := c.HttpClient.Do(req)
+
+		if err != nil {
+			lastErr = fmt.Errorf("http request failed (attempt %d/%d): %w", attempt+1, maxRetries, err)
+			if attempt < maxRetries-1 {
+				log.WithError(err).Warnf("Retrying (%d/%d)...", attempt+1, maxRetries)
+				time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		switch resp.StatusCode {
+		case http.StatusOK:
+			return resp, nil
+		case http.StatusTooManyRequests:
+			lastErr = ErrRateLimited
+			if attempt < maxRetries-1 {
+				sleepDuration := time.Duration(attempt+1) * 5 * time.Second
+				log.WithError(lastErr).Warnf("Rate limited. Retrying (%d/%d) after %s...", attempt+1, maxRetries, sleepDuration)
+				c.closeResponseBody(resp)
+				time.Sleep(sleepDuration)
+				continue
+			}
+		case http.StatusUnauthorized, http.StatusForbidden:
+			c.closeResponseBody(resp)
+			return nil, ErrUnauthorized
+		case http.StatusNotFound:
+			c.closeResponseBody(resp)
+			return nil, ErrNotFound
+		case http.StatusServiceUnavailable:
+			lastErr = fmt.Errorf("%w (status code 503)", ErrServerError)
+		default:
+			if resp.StatusCode >= 500 {
+				lastErr = fmt.Errorf("%w (status code %d)", ErrServerError, resp.StatusCode)
+			} else {
+				c.closeResponseBody(resp)
+				return nil, fmt.Errorf("API request failed with status %d", resp.StatusCode)
+			}
+		}
+
+		// Retryable error - close body before retry
+		c.closeResponseBody(resp)
+
+		if attempt < maxRetries-1 {
+			var sleepDuration time.Duration
+			if resp.StatusCode == http.StatusTooManyRequests {
+				sleepDuration = time.Duration(attempt+1) * 5 * time.Second
+			} else {
+				sleepDuration = time.Duration(attempt+1) * 3 * time.Second
+			}
+			log.WithError(lastErr).Warnf("Server error. Retrying (%d/%d) after %s...", attempt+1, maxRetries, sleepDuration)
+			time.Sleep(sleepDuration)
+		} else {
+			log.WithError(lastErr).Errorf("Request failed after %d attempts with status %d", maxRetries, resp.StatusCode)
+		}
+	}
+
+	return nil, lastErr
+}
+
+// closeResponseBody safely closes response body and drains it for connection reuse
+func (c *Client) closeResponseBody(resp *http.Response) {
+	if resp != nil && resp.Body != nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+}
+
 // GetModels fetches models based on query parameters, using cursor pagination.
 // Accepts the cursor for the next page. Returns the next cursor and the response.
 func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (string, models.ApiResponse, error) {
-	// Use the helper function to build base query parameters
 	values := ConvertQueryParamsToURLValues(queryParams)
 
-	// Add cursor *only if* it's provided (not empty)
 	if cursor != "" {
 		values.Add("cursor", cursor)
 	}
@@ -61,7 +135,6 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		log.WithError(err).Errorf("Error creating request for %s", reqURL)
-		// Wrap the underlying error
 		return "", models.ApiResponse{}, fmt.Errorf("error creating request: %w", err)
 	}
 
@@ -70,88 +143,13 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
 	}
 
-	var resp *http.Response
-	var lastErr error
-	maxRetries := 3 // TODO: Make this configurable via cfg?
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		resp, err = c.HttpClient.Do(req) // Transport will log if enabled
-
-		if err != nil {
-			lastErr = fmt.Errorf("http request failed (attempt %d/%d): %w", attempt+1, maxRetries, err)
-			if attempt < maxRetries-1 { // Only log retry warning if not the last attempt
-				log.WithError(err).Warnf("Retrying (%d/%d)...", attempt+1, maxRetries)
-				time.Sleep(time.Duration(attempt+1) * 2 * time.Second) // Exponential backoff
-				continue
-			}
-			break // Max retries reached on HTTP error
-		}
-
-		// Note: Response body is handled by the logging transport if logging is enabled.
-		// The transport reads it, logs it, and replaces resp.Body with a readable buffer.
-		// If logging is not enabled, the original resp.Body is passed through.
-
-		switch resp.StatusCode {
-		case http.StatusOK:
-			goto ProcessResponse // Use goto to break out of switch and loop
-		case http.StatusTooManyRequests:
-			lastErr = ErrRateLimited
-		case http.StatusUnauthorized, http.StatusForbidden:
-			lastErr = ErrUnauthorized
-			goto RequestFailed // Non-retryable auth error
-		case http.StatusNotFound:
-			lastErr = ErrNotFound
-			goto RequestFailed // Non-retryable not found error
-		case http.StatusServiceUnavailable:
-			lastErr = fmt.Errorf("%w (status code 503)", ErrServerError)
-		default:
-			if resp.StatusCode >= 500 {
-				lastErr = fmt.Errorf("%w (status code %d)", ErrServerError, resp.StatusCode)
-			} else {
-				// Other client-side errors (4xx) are likely not retryable
-				lastErr = fmt.Errorf("API request failed with status %d", resp.StatusCode)
-				goto RequestFailed
-			}
-		}
-
-		// If we are here, it's a retryable error (Rate Limit or 5xx)
-		// Body should be closed here before retry if it wasn't handled by transport/logging
-		if resp != nil && resp.Body != nil {
-			// Drain and close the body to allow connection reuse for retry
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-		}
-
-		if attempt < maxRetries-1 {
-			var sleepDuration time.Duration
-			if resp.StatusCode == http.StatusTooManyRequests {
-				// Longer backoff for rate limits
-				sleepDuration = time.Duration(attempt+1) * 5 * time.Second
-				log.WithError(lastErr).Warnf("Rate limited. Retrying (%d/%d) after %s...\"", attempt+1, maxRetries, sleepDuration)
-			} else { // Server errors (5xx)
-				sleepDuration = time.Duration(attempt+1) * 3 * time.Second
-				log.WithError(lastErr).Warnf("Server error. Retrying (%d/%d) after %s...", attempt+1, maxRetries, sleepDuration)
-			}
-			time.Sleep(sleepDuration)
-		} else {
-			log.WithError(lastErr).Errorf("Request failed after %d attempts with status %d", maxRetries, resp.StatusCode)
-		}
+	resp, err := c.RetryableHTTPRequest(req)
+	if err != nil {
+		return "", models.ApiResponse{}, err
 	}
-
-RequestFailed:
-	if lastErr != nil {
-		// Close body if response exists and we failed
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-		return "", models.ApiResponse{}, lastErr
-	}
-
-ProcessResponse:
-	// Body should be readable here (either original or replaced by logging transport)
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body) // Read the final body
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.WithError(err).Error("Error reading final response body")
 		return "", models.ApiResponse{}, fmt.Errorf("error reading response body: %w", err)
@@ -165,7 +163,6 @@ ProcessResponse:
 		return "", models.ApiResponse{}, fmt.Errorf("error unmarshalling response JSON: %w", err)
 	}
 
-	// Return the next cursor provided by the API
 	return response.Metadata.NextCursor, response, nil
 }
 
@@ -204,7 +201,7 @@ func ConvertQueryParamsToURLValues(queryParams models.QueryParameters) url.Value
 // GetModelDetails fetches details for a specific model ID.
 func (c *Client) GetModelDetails(modelID int) (models.Model, error) {
 	reqURL := fmt.Sprintf("%s/models/%d", CivitaiApiBaseUrl, modelID)
-	var modelDetails models.Model // Assuming models.Model is the correct struct
+	var modelDetails models.Model
 
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
@@ -217,61 +214,13 @@ func (c *Client) GetModelDetails(modelID int) (models.Model, error) {
 		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
 	}
 
-	var resp *http.Response
-	var lastErr error
-	maxRetries := 3 // Or get from config if needed here too
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		resp, err = c.HttpClient.Do(req) // Transport will log if enabled
-
-		if err != nil {
-			lastErr = fmt.Errorf("http request failed for model details (attempt %d/%d): %w", attempt+1, maxRetries, err)
-			if attempt < maxRetries-1 {
-				log.WithError(err).Warnf("Retrying model details (%d/%d)...", attempt+1, maxRetries)
-				time.Sleep(time.Duration(attempt+1) * 1 * time.Second) // Shorter backoff maybe?
-				continue
-			}
-			break
-		}
-
-		// Body handled by logging transport if enabled
-
-		switch resp.StatusCode {
-		case http.StatusOK:
-			goto ProcessModelDetailsResponse
-		case http.StatusUnauthorized, http.StatusForbidden:
-			lastErr = ErrUnauthorized
-			goto RequestModelDetailsFailed
-		case http.StatusNotFound:
-			lastErr = ErrNotFound
-			goto RequestModelDetailsFailed
-		default:
-			lastErr = fmt.Errorf("API request for model details failed with status %d", resp.StatusCode)
-			if resp.StatusCode >= 500 && attempt < maxRetries-1 {
-				log.WithError(lastErr).Warnf("Server error on model details. Retrying (%d/%d)...", attempt+1, maxRetries)
-				// Close body before retry
-				if resp != nil && resp.Body != nil {
-					_, _ = io.Copy(io.Discard, resp.Body)
-					_ = resp.Body.Close()
-				}
-				time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
-				continue // Retry server errors
-			}
-			goto RequestModelDetailsFailed // Non-retryable or max retries reached
-		}
+	resp, err := c.RetryableHTTPRequest(req)
+	if err != nil {
+		return models.Model{}, err
 	}
-
-RequestModelDetailsFailed:
-	if lastErr != nil {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-		return models.Model{}, lastErr
-	}
-
-ProcessModelDetailsResponse:
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body) // Read final body
+
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.WithError(err).Error("Error reading final model details response body")
 		return models.Model{}, fmt.Errorf("error reading model details response body: %w", err)
@@ -285,6 +234,81 @@ ProcessModelDetailsResponse:
 	}
 
 	return modelDetails, nil
+}
+
+// GetModelVersionDetails fetches details for a specific model version ID.
+func (c *Client) GetModelVersionDetails(versionID int) (models.ModelVersion, error) {
+	reqURL := fmt.Sprintf("%s/model-versions/%d", CivitaiApiBaseUrl, versionID)
+	var versionDetails models.ModelVersion
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return versionDetails, fmt.Errorf("error creating request for model version %d: %w", versionID, err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
+	}
+
+	resp, err := c.RetryableHTTPRequest(req)
+	if err != nil {
+		return versionDetails, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return versionDetails, fmt.Errorf("error reading model version details response body: %w", err)
+	}
+
+	err = json.Unmarshal(body, &versionDetails)
+	if err != nil {
+		log.Debugf("Response body causing unmarshal error: %s", string(body))
+		return versionDetails, fmt.Errorf("error unmarshalling model version details JSON: %w", err)
+	}
+
+	return versionDetails, nil
+}
+
+// GetImages fetches images based on query parameters, using cursor pagination.
+func (c *Client) GetImages(cursor string, queryParams models.ImageAPIParameters) (string, models.ImageApiResponse, error) {
+	values := ConvertImageAPIParamsToURLValues(queryParams)
+	if cursor != "" {
+		values.Add("cursor", cursor)
+	}
+
+	reqURL := fmt.Sprintf("%s/images?%s", CivitaiApiBaseUrl, values.Encode())
+	var response models.ImageApiResponse
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return "", response, fmt.Errorf("error creating request for images: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
+	}
+
+	resp, err := c.RetryableHTTPRequest(req)
+	if err != nil {
+		return "", response, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", response, fmt.Errorf("error reading image response body: %w", err)
+	}
+
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		log.Debugf("Response body causing unmarshal error: %s", string(body))
+		return "", response, fmt.Errorf("error unmarshalling image response JSON: %w", err)
+	}
+
+	return response.Metadata.NextCursor, response, nil
 }
 
 // ConvertImageAPIParamsToURLValues converts the ImageAPIParameters struct into url.Values

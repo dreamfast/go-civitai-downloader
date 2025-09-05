@@ -233,8 +233,6 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 	return correctedFinalPath, nil
 }
 
-// TODO: Move loadConfig function to internal/config/config.go
-
 // -- Hashing Helper --
 func calculateHash(filePath string, hashAlgo hash.Hash) (string, error) {
 	file, err := os.Open(SanitizePath(filePath))

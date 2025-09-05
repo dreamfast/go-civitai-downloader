@@ -22,8 +22,7 @@ import (
 // --- Package Level Variables for Download Flags --- (Moved from init)
 var (
 	downloadConcurrencyFlag int
-	// downloadApiKeyFlag string // APIKey is now a persistent/global flag
-	downloadTagFlag                   string
+	downloadTagFlag         string
 	downloadQueryFlag                 string
 	downloadModelTypesFlag            []string
 	downloadBaseModelsFlag            []string
@@ -49,10 +48,6 @@ var (
 	downloadMetaOnlyFlag              bool // Corresponds to DownloadMetaOnly
 )
 
-// Debug flags remain local to init/RunE
-// var downloadShowConfigFlag bool
-// var downloadDebugPrintApiUrlFlag bool
-
 // downloadCmd represents the download command
 var downloadCmd = &cobra.Command{
 	Use:   "download",
@@ -65,18 +60,10 @@ It checks for existing files based on a local database and saves metadata.`,
 func init() {
 	rootCmd.AddCommand(downloadCmd)
 
-	// Logging flags (Defined in root.go now, remove local definition if redundant)
-	// downloadCmd.Flags().StringVar(&logLevel, "log-level", "info", "Logging level (debug, info, warn, error)")
-	// downloadCmd.Flags().StringVar(&logFormat, "log-format", "text", "Log format (text, json)")
-
 	// Concurrency flag
-	// Use the package-level variable
 	downloadCmd.Flags().IntVarP(&downloadConcurrencyFlag, "concurrency", "c", 0, "Number of concurrent downloads (0 uses config default)")
 
 	// --- Query Parameter Flags (Mostly mirroring Config struct) ---
-	// Authentication - APIKey is now persistent in root.go
-	// downloadCmd.Flags().StringVar(&downloadApiKeyFlag, "api-key", "", "Civitai API Key (overrides config)")
-
 	// Filtering & Selection
 	downloadCmd.Flags().StringVarP(&downloadTagFlag, "tag", "t", "", "Filter by specific tag name")
 	downloadCmd.Flags().StringVarP(&downloadQueryFlag, "query", "q", "", "Search query term (e.g., model name)")
@@ -424,9 +411,6 @@ func executeDownloads(downloadsToQueue []potentialDownload, db *database.DB, fil
 	var wg sync.WaitGroup
 	// Change channel type to downloadJob
 	jobQueue := make(chan downloadJob, len(downloadsToQueue))
-	// Remove results and statusUpdates channels
-	// results := make(chan string, len(downloadsToQueue))
-	// statusUpdates := make(chan string, cfg.Download.Concurrency*2) // Channel for progress updates
 
 	numWorkers := cfg.Download.Concurrency
 	totalCount := len(downloadsToQueue)
@@ -481,98 +465,80 @@ func updateConcurrency(cmd *cobra.Command, cfg *models.Config) {
 	}
 }
 
-// runDownload is the main execution function for the download command.
-// It now uses globalConfig populated by loadGlobalConfig.
-func runDownload(cmd *cobra.Command, args []string) error {
-	log.Info("Starting download command...")
-
-	// Debug flags - check directly from command flags
-	debugPrintApiUrlFlag, _ := cmd.Flags().GetBool("debug-print-api-url")
-
-	// --- Use the globally loaded configuration ---
+// validateDownloadConfig validates and prepares the download configuration
+func validateDownloadConfig(cmd *cobra.Command) (*models.Config, error) {
 	cfg := globalConfig // Use the config loaded in PersistentPreRunE
 
-	// --- Update config based on flags specific to this run (like concurrency override) ---
+	// Update config based on flags specific to this run
 	updateConcurrency(cmd, &cfg)
 
-	// --- NEW: Update Limit based on flag --- START ---
+	// Update Limit based on flag
 	if cmd.Flags().Changed("limit") {
 		limitVal, _ := cmd.Flags().GetInt("limit")
-		// Update the config struct with the value from the flag.
-		// If user explicitly sets -l 0, it means 0 (unlimited), overriding config.
+		// If user explicitly sets -l 0, it means 0 (unlimited), overriding config
 		log.Infof("Overriding download limit with flag value: %d (0 means unlimited)", limitVal)
 		cfg.Download.Limit = limitVal
 	}
-	// --- NEW: Update Limit based on flag --- END ---
 
-	// --- Shared HTTP Client using global transport ---
-	// Create once here for potential reuse by API client and downloaders
+	return &cfg, nil
+}
+
+// setupDownloadContext prepares the download environment and validates parameters
+func setupDownloadContext(cmd *cobra.Command, cfg *models.Config) (*http.Client, models.QueryParameters, error) {
+	// Shared HTTP Client using global transport
 	sharedHttpClient := &http.Client{
 		Timeout:   0, // Timeout managed by transport
 		Transport: globalHttpTransport,
 	}
 
-	// --- API Parameter Construction ---
-	queryParams := buildQueryParameters(&cfg)
+	// API Parameter Construction
+	queryParams := buildQueryParameters(cfg)
 
-	// --- Debug: Print API URL if requested ---
+	// Debug: Print API URL if requested
+	debugPrintApiUrlFlag, _ := cmd.Flags().GetBool("debug-print-api-url")
 	if debugPrintApiUrlFlag {
-		// Construct URL using model helper
 		fmt.Println(models.ConstructApiUrl(queryParams))
-		return nil // Exit after printing URL
+		return nil, queryParams, fmt.Errorf("debug mode - exiting after URL print")
 	}
 
-	// --- Setup Database, Downloaders ---
-	db, fileDownloader, imageDownloader, err := setupDownloadEnvironment(&cfg)
-	if err != nil {
-		log.Errorf("Failed to set up download environment: %v", err)
-		return err // Return error to stop execution
-	}
-	defer db.Close()
-
-	// --- Confirm Parameters NOW (Handles --show-config) --- NEW POSITION
-	if !confirmParameters(cmd, &cfg, queryParams) {
-		return nil // Exit if user cancels or if --show-config was used
+	// Confirm Parameters (Handles --show-config)
+	if !confirmParameters(cmd, cfg, queryParams) {
+		return nil, queryParams, fmt.Errorf("user cancelled or show-config mode")
 	}
 
-	// --- Fetch Models and Determine Downloads ---
+	return sharedHttpClient, queryParams, nil
+}
+
+// fetchDownloadCandidates fetches and processes models based on configuration
+func fetchDownloadCandidates(cfg *models.Config, apiClient *api.Client, db *database.DB, imageDownloader *downloader.Downloader) ([]potentialDownload, error) {
 	log.Info("Fetching model information from Civitai API...")
 
-	// Create API client instance using shared client and config
-	apiClient := api.NewClient(cfg.APIKey, sharedHttpClient, cfg)
-
-	// --- Start: Handle Single Model/Version ID cases ---
 	var downloadsToQueue []potentialDownload
 	var fetchErr error
 
 	if cfg.Download.ModelVersionID > 0 {
 		log.Infof("Processing specific model version ID: %d", cfg.Download.ModelVersionID)
-		// Call handleSingleVersionDownload (Note: it returns size too, but we recalculate later if needed)
-		downloadsToQueue, _, fetchErr = handleSingleVersionDownload(cfg.Download.ModelVersionID, db, apiClient, &cfg)
+		downloadsToQueue, _, fetchErr = handleSingleVersionDownload(cfg.Download.ModelVersionID, db, apiClient, cfg)
 	} else if cfg.Download.ModelID > 0 {
 		log.Infof("Processing specific model ID: %d (All versions: %v)", cfg.Download.ModelID, cfg.Download.AllVersions)
-		// Pass imageDownloader needed by handleSingleModelDownload
-		downloadsToQueue, _, fetchErr = handleSingleModelDownload(cfg.Download.ModelID, db, apiClient, imageDownloader, &cfg)
+		downloadsToQueue, _, fetchErr = handleSingleModelDownload(cfg.Download.ModelID, db, apiClient, imageDownloader, cfg)
 	} else {
 		log.Info("Processing models based on general query parameters.")
-		// Existing general fetch logic
-		downloadsToQueue, fetchErr = fetchAndProcessModels(apiClient, db, queryParams, &cfg)
+		downloadsToQueue, fetchErr = fetchAndProcessModels(apiClient, db, buildQueryParameters(cfg), cfg)
 	}
 
 	if fetchErr != nil {
-		log.Errorf("Error fetching or processing models: %v", fetchErr)
-		return fetchErr // Return error
+		return nil, fmt.Errorf("error fetching or processing models: %w", fetchErr)
 	}
-	// --- End: Handle Single Model/Version ID cases ---
 
 	log.Infof("Finished initial fetch/processing. Found %d potential downloads.", len(downloadsToQueue))
+	return downloadsToQueue, nil
+}
 
-	// --- Apply Total Download Limit --- NEW
-	// This limit might still apply even if a single model/version was requested,
-	// especially if --all-versions resulted in many files for a single model.
+// applyDownloadLimits applies user-specified download limits to the download queue
+func applyDownloadLimits(downloadsToQueue []potentialDownload, cfg *models.Config) []potentialDownload {
 	userTotalLimit := cfg.Download.Limit
 	// Only apply limit if it's positive AND if we WEREN'T fetching a specific version ID
-	// (as version ID fetch should naturally only return files for that version).
 	if userTotalLimit > 0 && cfg.Download.ModelVersionID == 0 && len(downloadsToQueue) > userTotalLimit {
 		log.Infof("User limit (--limit %d) is less than the total potential downloads found (%d). Truncating list.", userTotalLimit, len(downloadsToQueue))
 		downloadsToQueue = downloadsToQueue[:userTotalLimit]
@@ -580,23 +546,65 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	} else if userTotalLimit > 0 && cfg.Download.ModelVersionID == 0 {
 		log.Debugf("User limit (--limit %d) is not exceeded by potential downloads (%d).", userTotalLimit, len(downloadsToQueue))
 	}
-	// --- End Apply Total Download Limit ---
+	return downloadsToQueue
+}
 
-	// --- Handle Metadata-Only Mode ---
+// runDownload is the main execution function for the download command.
+// It now uses globalConfig populated by loadGlobalConfig.
+func runDownload(cmd *cobra.Command, args []string) error {
+	log.Info("Starting download command...")
+
+	// Validate and prepare configuration
+	cfg, err := validateDownloadConfig(cmd)
+	if err != nil {
+		return err
+	}
+
+	// Setup download context and validate parameters
+	sharedHttpClient, _, err := setupDownloadContext(cmd, cfg)
+	if err != nil {
+		// Check if this is a controlled exit (debug mode or user cancellation)
+		if err.Error() == "debug mode - exiting after URL print" || err.Error() == "user cancelled or show-config mode" {
+			return nil
+		}
+		return err
+	}
+
+	// Setup Database, Downloaders
+	db, fileDownloader, imageDownloader, err := setupDownloadEnvironment(cfg)
+	if err != nil {
+		log.Errorf("Failed to set up download environment: %v", err)
+		return err
+	}
+	defer db.Close()
+
+	// Create API client instance using shared client and config
+	apiClient := api.NewClient(cfg.APIKey, sharedHttpClient, *cfg)
+
+	// Fetch and process models
+	downloadsToQueue, err := fetchDownloadCandidates(cfg, apiClient, db, imageDownloader)
+	if err != nil {
+		log.Errorf("Failed to fetch download candidates: %v", err)
+		return err
+	}
+
+	// Apply download limits
+	downloadsToQueue = applyDownloadLimits(downloadsToQueue, cfg)
+
+	// Handle Metadata-Only Mode
 	if cfg.Download.DownloadMetaOnly {
-		// Pass imageDownloader to the handler function
-		if handleMetadataOnlyMode(downloadsToQueue, &cfg, imageDownloader) {
+		if handleMetadataOnlyMode(downloadsToQueue, cfg, imageDownloader) {
 			return nil // Exit after meta-only processing
 		}
 	}
 
-	// --- Confirm Actual Download ---
-	if !confirmDownload(downloadsToQueue, &cfg) {
+	// Confirm Actual Download
+	if !confirmDownload(downloadsToQueue, cfg) {
 		return nil // Exit if user cancels
 	}
 
-	// --- Execute Downloads ---
-	executeDownloads(downloadsToQueue, db, fileDownloader, imageDownloader, &cfg)
+	// Execute Downloads
+	executeDownloads(downloadsToQueue, db, fileDownloader, imageDownloader, cfg)
 
 	log.Info("Download command finished.")
 	return nil

@@ -2,8 +2,8 @@
 /civitai-downloader
 
 # Log files
-*.log
-api.log
+#*.log
+#api.log
 
 # OS-specific files
 .DS_Store

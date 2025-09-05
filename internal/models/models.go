@@ -269,16 +269,17 @@ type (
 
 	// ImageApiItem represents a single image item specifically from the /api/v1/images response.
 	ImageApiItem struct {
-		ID     int    `json:"id"`
-		URL    string `json:"url"`
-		Hash   string `json:"hash"` // Blurhash
-		Width  int    `json:"width"`
-		Height int    `json:"height"`
-		// Added from original ModelImage, if available/relevant for ImageApiItem
-		Nsfw      interface{} `json:"nsfw,omitempty"` // API for images can take boolean or string
-		NsfwLevel interface{} `json:"nsfwLevel,omitempty"`
-		Username  string      `json:"username,omitempty"`
-		PostID    *int        `json:"postId,omitempty"`
+		ID             int         `json:"id"`
+		URL            string      `json:"url"`
+		Hash           string      `json:"hash"` // Blurhash
+		Width          int         `json:"width"`
+		Height         int         `json:"height"`
+		Nsfw           interface{} `json:"nsfw,omitempty"` // API for images can take boolean or string
+		NsfwLevel      interface{} `json:"nsfwLevel,omitempty"`
+		Username       string      `json:"username,omitempty"`
+		PostID         *int        `json:"postId,omitempty"`
+		ModelID        int         `json:"modelId,omitempty"`        // Added field
+		ModelVersionID int         `json:"modelVersionId,omitempty"` // Added field
 		// Meta      interface{} `json:"meta,omitempty"` // Usually contains prompt info
 	}
 
