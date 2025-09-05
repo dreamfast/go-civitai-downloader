@@ -1,81 +1,165 @@
 # Civitai Downloader Configuration Example
+# This file shows all available configuration options with comments.
+# Settings correspond to command-line flags and override defaults.
+# CLI flags take final precedence over settings in this file.
 
-# --- Connection/Auth ---
-# Your Civitai API Key (Required for downloading models)
+# --- Global Settings ---
+# These settings apply generally or are defaults for multiple commands.
+
+# Your Civitai API Key. Primarily needed for authenticated endpoints or higher rate limits.
 ApiKey = ""
 
-# --- Paths ---
-# Default directory to save downloaded files
+# Default directory to save downloaded files. Subdirectories for type/model/version will be created inside this.
 SavePath = "downloads"
-# Path to the BoltDB database file used to track downloads
-# If empty, defaults to [SavePath]/civitai_download_db
-DatabasePath = "civitai.db" 
-# Path to the Bleve search index directory.
-# If empty, defaults to separate indexes within [SavePath] (e.g., [SavePath]/civitai.bleve, [SavePath]/civitai_images.bleve)
-BleveIndexPath = ""
+
+# Path to the SQLite database file used to track downloads and avoid re-downloading.
+# If empty, defaults to "[SavePath]/civitai.db".
+DatabasePath = "civitai.db"
+
+# Delay in milliseconds between consecutive API calls (helps avoid rate limiting).
+ApiDelayMs = 200
+
+# Timeout in seconds for HTTP client requests (API calls and downloads).
+ApiClientTimeoutSec = 120
+
+# Maximum number of retries for failed API calls or downloads.
+MaxRetries = 3
+
+# Initial delay in milliseconds before the first retry (uses exponential backoff).
+InitialRetryDelayMs = 1000
+
+# Log API requests and responses to a file (api.log in SavePath). Useful for debugging.
+LogApiRequests = false
+
+# Log level for application logging. Can be overridden by --log-level flag.
+# Options: "trace", "debug", "info", "warn", "error", "fatal", "panic"
+LogLevel = "info"
+
+# Log format. Can be overridden by --log-format flag.
+# Options: "text", "json"
+LogFormat = "text"
+
+
+# --- Download Command Settings ---
+[Download]
+# Settings specific to the 'civitai-downloader download' command.
 
 # --- Filtering - Model/Version Level ---
-# Optional search query string (corresponds to --query flag)
+# Optional search query string (corresponds to -q flag).
 Query = ""
-# Optional list of tags to filter by (API currently uses single tag via --tag flag)
-# Tags = ["tag1", "tag2"] 
-# Optional list of usernames to filter by (API currently uses single username via --username flag)
-# Usernames = ["user1", "user2"] 
-# Filter by specific model types (e.g., Checkpoint, LORA, LoCon). Empty will attempt to fetch all types.
-ModelTypes = [] 
-# Filter by specific base models (e.g., "SD 1.5", "SDXL 1.0"). Empty will attempt to fetch all types.
+# Optional tag to filter by (corresponds to -t flag). Note: API currently supports only one tag here.
+Tag = ""
+# Optional list of usernames to filter by. Note: --username flag takes a single name.
+# Usernames = ["creator1", "creator2"]
+# Filter by specific model types (e.g., "Checkpoint", "LORA", "LoCon"). Empty fetches all. Corresponds to -m flag.
+ModelTypes = []
+# Filter by specific base models (e.g., "SD 1.5", "SDXL 1.0"). Empty fetches all. Corresponds to -b flag.
 BaseModels = []
-# List of base model names (substrings) to ignore during download
+# List of base model names (substrings) to ignore during download. Corresponds to --ignore-base-models flag.
 IgnoreBaseModels = []
-# Whether to include models marked as NSFW (Not Safe For Work)
-Nsfw = true 
-# Download ONLY a specific model version ID, ignoring other filters (0 means disabled)
-# ModelVersionID = 12345 
-# Download all versions of matched models, not just the latest one
-AllVersions = false # Corresponds to --all-versions flag
+# Whether to include models marked as NSFW (Not Safe For Work). Corresponds to --nsfw flag.
+Nsfw = true
+# Download ONLY a specific model ID, ignoring other filters (0 means disabled). Corresponds to --model-id flag.
+# ModelID = 12345
+# Download ONLY a specific model version ID, ignoring other filters (0 means disabled). Corresponds to --model-version-id flag.
+# ModelVersionID = 67890
+# Download all versions of matched models, not just the latest one. Corresponds to --all-versions flag.
+AllVersions = true
 
 # --- Filtering - File Level ---
-# Only download files marked as "Primary" by the uploader
-PrimaryOnly = false 
-# For Checkpoint models, only download files marked as "pruned"
-Pruned = false 
-# For Checkpoint models, only download files marked as "fp16" (float16 precision)
-Fp16 = false 
-# List of case-insensitive strings. If a filename contains any of these, it will be ignored.
+# Only download files marked as "Primary" by the uploader. Corresponds to --primary-only flag.
+PrimaryOnly = false
+# For Checkpoint models, only download files marked as "pruned". Corresponds to --pruned flag.
+Pruned = false
+# For Checkpoint models, only download files marked as "fp16" (float16 precision). Corresponds to --fp16 flag.
+Fp16 = false
+# List of case-insensitive strings. If a filename contains any of these, it will be ignored. Corresponds to --ignore-filename-strings flag.
 IgnoreFileNameStrings = []
 
 # --- API Query Behavior ---
-# Sorting order for model search results ("Highest Rated", "Most Downloaded", "Newest")
+# Sorting order for model search results ("Highest Rated", "Most Downloaded", "Newest", etc.). Corresponds to --sort flag.
 Sort = "Most Downloaded"
-# Time period for sorting ("AllTime", "Year", "Month", "Week", "Day")
+# Time period for sorting ("AllTime", "Year", "Month", "Week", "Day"). Corresponds to --period flag.
 Period = "AllTime"
-# Maximum number of models to request per API page (max 100)
-Limit = 100
-# Maximum number of API pages to fetch (0 for no limit)
+# Limit the TOTAL download limit
+Limit = 0
+# Maximum number of API pages to fetch (0 for no limit). Corresponds to -p flag.
 MaxPages = 0
 
 # --- Downloader Behavior ---
-# Number of concurrent download workers
+# Number of concurrent download workers. Corresponds to -c flag.
 Concurrency = 4
-# Save a .json file containing model/version metadata alongside each downloaded file
-Metadata = true # Corresponds to --metadata flag
-# Only download and save metadata files, skip actual model file download
-MetaOnly = false # Corresponds to --meta-only flag
-# Save a full model info JSON (including all versions) to 'model_info/' directory
-ModelInfo = true # Corresponds to --model-info flag
-# Download preview images associated with the specific downloaded model version 
-# Saves to '[ModelDir]/version_images/[VersionID]/'
-VersionImages = true # Corresponds to --version-images flag
-# When ModelInfo is true, also download all images for all versions of the model
-# Saves to '[ModelInfoDir]/images/[VersionID]/'
-ModelImages = false # Corresponds to --model-images flag
-# Skip the confirmation prompt before starting downloads
-SkipConfirmation = false # Corresponds to --yes flag
-# Delay in milliseconds between consecutive API calls (helps avoid rate limiting)
-ApiDelayMs = 200
-# Timeout in seconds for HTTP client requests (API calls and downloads)
-ApiClientTimeoutSec = 120
+# Save a .json file containing model version metadata alongside each downloaded file. Corresponds to --metadata flag.
+# Default is true.
+SaveMetadata = true
+# Save a full model info JSON (including all versions) to a path derived from ModelInfoPathPattern. Corresponds to --model-info flag.
+# Default is true.
+ModelInfo = true
+# Download preview images associated with the specific downloaded model version. Saves to a path derived from VersionPathPattern (plus '/images'). Corresponds to --version-images flag.
+# Default is false.
+VersionImages = true
+# When SaveModelInfo is true, also download all images for *all* versions of the model. Saves to a path derived from ModelInfoPathPattern (plus '/images'). Corresponds to --model-images flag.
+ModelImages = false # Default is false. TOML key is "ModelImages".
+# Only download and save metadata/image files, skip actual model file download. Corresponds to --meta-only flag.
+MetaOnly = false # TOML key is "MetaOnly".
+# Skip the confirmation prompt before starting downloads. Corresponds to -y flag.
+SkipConfirmation = false
 
-# --- Other ---
-# Log API requests and responses to a file (api.log)
-LogApiRequests = false
+# --- Path Structure ---
+# Define the directory structure for downloaded model versions.
+# Available placeholders: {modelId}, {modelName}, {modelType}, {creatorName}, {versionId}, {versionName}, {baseModel}
+# Values are automatically slugified (e.g., "My Model Name" becomes "my-model-name").
+# The final filename for the model file will be "{versionId}_{originalFilenameSlugified}" appended to this path.
+VersionPathPattern = "{modelType}/{baseModel}/{modelId}-{modelName}/{versionId}-{versionName}"
+
+# Define the directory structure for model-specific information (model.json, and model images if ModelImages=true).
+# Available placeholders: {modelId}, {modelName}, {modelType}, {creatorName}
+# Values are automatically slugified.
+# Note: If you want the downloads organised properly make sure this value matches the base path of the above
+# otherwise you will have model information and the versions in different folders
+ModelInfoPathPattern = "{modelType}/{baseModel}/{modelId}-{modelName}"
+
+
+# --- Images Command Settings ---
+[Images]
+# Settings specific to the 'civitai-downloader images' command.
+
+# Directory structure for downloaded images using data from images API.
+# Available placeholders: {username}, {baseModel}, {imageId}
+# Values are automatically slugified (spaces become hyphens).
+# The filename will be determined by the downloader (usually {imageId}_original.ext).
+PathPattern = "{username}/{baseModel}"
+
+# Optional settings (uncomment to override defaults)
+# Limit = 100
+# PostID = 0
+# ModelID = 0
+# ModelVersionID = 0
+# Username = ""
+# Nsfw = "" # API uses string here: "None", "Soft", "Mature", "X", "Blocked"
+# Sort = "Newest"
+# Period = "AllTime"
+# Page = 1
+# MaxPages = 0
+# OutputDir = "" # Defaults to images/ under SavePath if empty
+# Concurrency = 4
+# SaveMetadata = false # Save image metadata
+
+
+# --- Torrent Command Settings ---
+[Torrent]
+# Settings specific to the 'civitai-downloader torrent' command (if implemented).
+# Placeholder values shown.
+# OutputDir = "" # Defaults to torrents/ under SavePath if empty
+# Overwrite = false
+# MagnetLinks = false
+# Concurrency = 4
+
+
+# --- Database Command Settings ---
+[DB]
+# Settings specific to the 'civitai-downloader db' command group.
+
+[DB.Verify] # Settings for 'db verify' subcommand
+# CheckHash = true # Check SHA256/CRC32 hashes during verification
+# AutoRedownload = false # Automatically re-download missing/failed files (--yes flag)

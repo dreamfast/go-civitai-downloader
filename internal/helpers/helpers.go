@@ -8,6 +8,7 @@ import (
 	"hash/crc32"
 	"io"
 	"math"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -98,8 +99,8 @@ func CheckHash(filePath string, hashes models.Hashes) bool {
 // It's used to display download progress.
 // Note: Consider moving this to the 'downloader' package later.
 type CounterWriter struct {
-	Total  uint64
-	Writer io.Writer
+	Writer io.Writer // Put interface first (8 bytes on 64-bit)
+	Total  uint64    // Then 8-byte integer
 }
 
 // Write implements the io.Writer interface for CounterWriter.
@@ -163,7 +164,7 @@ func ConvertToSlug(str string) string {
 // Uses standard directory permissions (0700).
 func CheckAndMakeDir(dir string) bool {
 	// Use MkdirAll to create parent directories if they don't exist
-	err := os.MkdirAll(dir, 0700)
+	err := os.MkdirAll(SanitizePath(dir), 0700)
 	if err != nil {
 		log.WithError(err).Errorf("Error creating directory %s", dir) // Use logrus
 		return false
@@ -185,7 +186,7 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 		"image/webp": ".webp",
 	}
 
-	fRead, errRead := os.Open(tempFilePath)
+	fRead, errRead := os.Open(SanitizePath(tempFilePath))
 	if errRead != nil {
 		log.WithError(errRead).Warnf("Could not open file %s for MIME type detection, using original extension.", tempFilePath)
 		// Return original path, don't treat this as a fatal error for the caller
@@ -232,8 +233,6 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 	return correctedFinalPath, nil
 }
 
-// TODO: Move loadConfig function to internal/config/config.go
-
 // -- Hashing Helper --
 func calculateHash(filePath string, hashAlgo hash.Hash) (string, error) {
 	file, err := os.Open(filePath)
@@ -247,4 +246,61 @@ func calculateHash(filePath string, hashAlgo hash.Hash) (string, error) {
 	}
 
 	return hex.EncodeToString(hashAlgo.Sum(nil)), nil
+}
+
+// GetExtensionFromMimeType returns the standard file extension for a given MIME type.
+// It returns the extension (including the dot) and true if found, otherwise empty string and false.
+func GetExtensionFromMimeType(mimeType string) (string, bool) {
+	// Handle potential parameters in the MIME type (e.g., "text/plain; charset=utf-8")
+	baseMimeType, _, _ := mime.ParseMediaType(mimeType)
+
+	// Common MIME types and their standard extensions
+	mimeExtensionMap := map[string]string{
+		"image/jpeg": ".jpg",
+		"image/webp": ".webp",
+		"image/png":  ".png",
+		"video/mp4":  ".mp4",
+	}
+
+	ext, ok := mimeExtensionMap[baseMimeType]
+	return ext, ok
+}
+
+// StringSliceContains checks if a string slice contains a specific item (case-insensitive).
+func StringSliceContains(slice []string, item string) bool {
+	for _, s := range slice {
+		if strings.EqualFold(s, item) {
+			return true
+		}
+	}
+	return false
+}
+
+// SanitizePath cleans a file path to prevent directory traversal.
+// It removes ".." and ensures the path is relative.
+func SanitizePath(path string) string {
+	// Clean the path to resolve any ".." elements.
+	cleaned := filepath.Clean(path)
+
+	// Remove any leading slashes to ensure it's a relative path.
+	trimmed := strings.TrimLeft(cleaned, `\/`)
+
+	// As a final safety measure, split the path and remove any remaining ".." parts.
+	// This is belt-and-suspenders after filepath.Clean, but adds extra security.
+	parts := strings.Split(trimmed, string(filepath.Separator))
+	safeParts := []string{}
+	for _, part := range parts {
+		if part != ".." {
+			safeParts = append(safeParts, part)
+		}
+	}
+
+	// Join the safe parts back together.
+	safePath := filepath.Join(safeParts...)
+
+	if safePath != trimmed {
+		log.Warnf("Path sanitization changed '%s' to '%s'", path, safePath)
+	}
+
+	return safePath
 }

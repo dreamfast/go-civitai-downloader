@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 
-	log "github.com/sirupsen/logrus" // Import logrus for config loading message
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-
-	"go-civitai-download/internal/api"
+	"go-civitai-download/internal/config" // Import new config package
 	"go-civitai-download/internal/models"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+)
+
+const (
+	logFormatText = "text"
 )
 
 // cfgFile holds the path to the config file specified by the user
@@ -30,14 +31,16 @@ var apiDelayFlag int
 // apiTimeoutFlag holds the value of the --api-timeout flag
 var apiTimeoutFlag int
 
-// logLevel and logFormat are declared elsewhere (e.g., cmd_download_setup.go)
-// var logLevel string
-// var logFormat string
+// logLevelFlagValue holds the value of the --log-level flag, bound by Cobra
+var logLevelFlagValue string
 
-// globalConfig holds the loaded configuration
+// logFormatFlagValue holds the value of the --log-format flag, bound by Cobra
+var logFormatFlagValue string
+
+// globalConfig holds the loaded configuration from config.Initialize
 var globalConfig models.Config
 
-// globalHttpTransport holds the globally configured HTTP transport (base or logging-wrapped)
+// globalHttpTransport holds the globally configured HTTP transport
 var globalHttpTransport http.RoundTripper
 
 // rootCmd represents the base command when called without any subcommands
@@ -46,16 +49,11 @@ var rootCmd = &cobra.Command{
 	Short: "A tool to download models from Civitai",
 	Long: `Civitai Downloader allows you to fetch and manage models 
 from Civitai.com based on specified criteria.`,
-	PersistentPreRunE: loadGlobalConfig, // Load config before any command runs
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	PersistentPreRunE: loadGlobalConfig,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	// cobra.OnInitialize(initConfig) // We use PersistentPreRunE now
 	err := rootCmd.Execute()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
@@ -64,149 +62,463 @@ func Execute() {
 }
 
 func init() {
-	// Add persistent flags that apply to all commands
+	// Define persistent flags, binding them to global variables.
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config.toml", "Configuration file path")
-
-	// Add persistent flags for logging
-	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Logging level (trace, debug, info, warn, error, fatal, panic)")
-	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "text", "Logging format (text, json)")
-	// NOTE: Viper binding for log level/format is not strictly necessary
-	// as they are handled directly in initLogging() before Viper might be fully ready,
-	// but we can add them for consistency if needed elsewhere.
-	// viper.BindPFlag("loglevel", rootCmd.PersistentFlags().Lookup("log-level"))
-	// viper.BindPFlag("logformat", rootCmd.PersistentFlags().Lookup("log-format"))
-
-	// Add persistent flag for API logging
+	rootCmd.PersistentFlags().StringVar(&logLevelFlagValue, "log-level", "info", "Logging level (trace, debug, info, warn, error, fatal, panic)")
+	rootCmd.PersistentFlags().StringVar(&logFormatFlagValue, "log-format", logFormatText, "Logging format (text, json)")
 	rootCmd.PersistentFlags().BoolVar(&logApiFlag, "log-api", false, "Log API requests/responses to api.log (overrides config)")
-	viper.BindPFlag("logapirequests", rootCmd.PersistentFlags().Lookup("log-api"))
+	rootCmd.PersistentFlags().StringVar(&savePathFlag, "save-path", "", "Directory to save models (overrides config)")                                        // Default empty string
+	rootCmd.PersistentFlags().IntVar(&apiDelayFlag, "api-delay", -1, "Delay between API calls in ms (overrides config, -1 uses config default)")              // Default -1
+	rootCmd.PersistentFlags().IntVar(&apiTimeoutFlag, "api-timeout", -1, "Timeout for API HTTP client in seconds (overrides config, -1 uses config default)") // Default -1
 
-	// Add persistent flag for save path
-	rootCmd.PersistentFlags().StringVar(&savePathFlag, "save-path", "", "Directory to save models (overrides config)")
-	viper.BindPFlag("savepath", rootCmd.PersistentFlags().Lookup("save-path"))
-
-	// Add persistent flag for API delay
-	// Default value 0 or negative means "use config or viper default"
-	rootCmd.PersistentFlags().IntVar(&apiDelayFlag, "api-delay", -1, "Delay between API calls in ms (overrides config, -1 uses config default)")
-	viper.BindPFlag("apidelayms", rootCmd.PersistentFlags().Lookup("api-delay"))
-
-	// Add persistent flag for API timeout
-	// Default value 0 or negative means "use config or viper default"
-	rootCmd.PersistentFlags().IntVar(&apiTimeoutFlag, "api-timeout", -1, "Timeout for API HTTP client in seconds (overrides config, -1 uses config default)")
-	viper.BindPFlag("apiclienttimeoutsec", rootCmd.PersistentFlags().Lookup("api-timeout"))
-
-	// Set Viper defaults (these are applied only if not set in config file or by flag)
-	viper.SetDefault("apidelayms", 200)         // Default polite delay
-	viper.SetDefault("apiclienttimeoutsec", 60) // Default timeout
-
-	// Bind persistent flags defined above
-	_ = viper.BindPFlag("logapirequests", rootCmd.PersistentFlags().Lookup("log-api"))
-	_ = viper.BindPFlag("savepath", rootCmd.PersistentFlags().Lookup("save-path"))
-	_ = viper.BindPFlag("apidelayms", rootCmd.PersistentFlags().Lookup("api-delay"))
-	_ = viper.BindPFlag("apiclienttimeoutsec", rootCmd.PersistentFlags().Lookup("api-timeout"))
-	_ = viper.BindPFlag("bleveindexpath", rootCmd.PersistentFlags().Lookup("bleve-index-path"))
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Removed viper.BindPFlag calls
+	// Removed viper.SetDefault calls
 }
 
-// loadGlobalConfig attempts to load the configuration and applies flag overrides.
-// It also sets up the global HTTP transport based on logging settings.
-func loadGlobalConfig(cmd *cobra.Command, args []string) error {
-	// --- Configure Viper to read the config file ---
-	if cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(cfgFile)
+// applyDownloadFlags applies download command flags to the CliFlags structure
+func applyDownloadFlags(cmd *cobra.Command, flags *config.CliFlags) {
+	if flags.Download == nil {
+		flags.Download = &config.CliDownloadFlags{}
+	}
+
+	// Apply each flag if it was changed
+	if cmd.Flags().Changed("concurrency") {
+		flags.Download.Concurrency = &downloadConcurrencyFlag
+	}
+	if cmd.Flags().Changed("tag") {
+		flags.Download.Tag = &downloadTagFlag
+	}
+	if cmd.Flags().Changed("query") {
+		flags.Download.Query = &downloadQueryFlag
+	}
+	if cmd.Flags().Changed("model-types") {
+		flags.Download.ModelTypes = &downloadModelTypesFlag
+	}
+	if cmd.Flags().Changed("base-models") {
+		flags.Download.BaseModels = &downloadBaseModelsFlag
+	}
+	if cmd.Flags().Changed("username") {
+		flags.Download.Username = &downloadUsernameFlag
+	}
+	if cmd.Flags().Changed("nsfw") {
+		flags.Download.Nsfw = &downloadNsfwFlag
+	}
+	if cmd.Flags().Changed("limit") {
+		flags.Download.Limit = &downloadLimitFlag
+	}
+	if cmd.Flags().Changed("max-pages") {
+		flags.Download.MaxPages = &downloadMaxPagesFlag
+	}
+	if cmd.Flags().Changed("sort") {
+		flags.Download.Sort = &downloadSortFlag
+	}
+	if cmd.Flags().Changed("period") {
+		flags.Download.Period = &downloadPeriodFlag
+	}
+	if cmd.Flags().Changed("model-id") {
+		flags.Download.ModelID = &downloadModelIDFlag
+	}
+	if cmd.Flags().Changed("model-version-id") {
+		flags.Download.ModelVersionID = &downloadModelVersionIDFlag
+	}
+	if cmd.Flags().Changed("primary-only") {
+		flags.Download.PrimaryOnly = &downloadPrimaryOnlyFlag
+	}
+	if cmd.Flags().Changed("pruned") {
+		flags.Download.Pruned = &downloadPrunedFlag
+	}
+	if cmd.Flags().Changed("fp16") {
+		flags.Download.Fp16 = &downloadFp16Flag
+	}
+	if cmd.Flags().Changed("all-versions") {
+		flags.Download.AllVersions = &downloadAllVersionsFlag
+	}
+	if cmd.Flags().Changed("ignore-base-models") {
+		flags.Download.IgnoreBaseModels = &downloadIgnoreBaseModelsFlag
+	}
+	if cmd.Flags().Changed("ignore-filename-strings") {
+		flags.Download.IgnoreFileNameStrings = &downloadIgnoreFileNameStringsFlag
+	}
+	if cmd.Flags().Changed("yes") {
+		flags.Download.SkipConfirmation = &downloadYesFlag
+	}
+	if cmd.Flags().Changed("metadata") {
+		flags.Download.SaveMetadata = &downloadMetadataFlag
+	}
+	if cmd.Flags().Changed("model-info") {
+		flags.Download.SaveModelInfo = &downloadModelInfoFlag
+	}
+	if cmd.Flags().Changed("version-images") {
+		flags.Download.SaveVersionImages = &downloadVersionImagesFlag
+	}
+	if cmd.Flags().Changed("model-images") {
+		flags.Download.SaveModelImages = &downloadModelImagesFlag
+	}
+	if cmd.Flags().Changed("meta-only") {
+		flags.Download.DownloadMetaOnly = &downloadMetaOnlyFlag
+	}
+}
+
+// applyImagesFlags applies images command flags to the CliFlags structure
+func applyImagesFlags(cmd *cobra.Command, flags *config.CliFlags) {
+	if flags.Images == nil {
+		flags.Images = &config.CliImagesFlags{}
+	}
+
+	// Apply each flag if it was changed
+	if cmd.Flags().Changed("limit") {
+		flags.Images.Limit = &imagesLimitFlag
+	}
+	if cmd.Flags().Changed("post-id") {
+		flags.Images.PostID = &imagesPostIDFlag
+	}
+	if cmd.Flags().Changed("model-id") {
+		flags.Images.ModelID = &imagesModelIDFlag
+	}
+	if cmd.Flags().Changed("model-version-id") {
+		flags.Images.ModelVersionID = &imagesModelVersionIDFlag
+	}
+	if cmd.Flags().Changed("username") {
+		flags.Images.Username = &imagesUsernameFlag
+	}
+	if cmd.Flags().Changed("nsfw") {
+		flags.Images.Nsfw = &imagesNsfwFlag
+	}
+	if cmd.Flags().Changed("sort") {
+		flags.Images.Sort = &imagesSortFlag
+	}
+	if cmd.Flags().Changed("period") {
+		flags.Images.Period = &imagesPeriodFlag
+	}
+	if cmd.Flags().Changed("max-pages") {
+		flags.Images.MaxPages = &imagesMaxPagesFlag
+	}
+	if cmd.Flags().Changed("output-dir") {
+		flags.Images.OutputDir = &imagesOutputDirFlag
+	}
+	if cmd.Flags().Changed("concurrency") {
+		flags.Images.Concurrency = &imagesConcurrencyFlag
+	}
+	if cmd.Flags().Changed("metadata") {
+		flags.Images.SaveMetadata = &imagesMetadataFlag
+	}
+}
+
+// applyDownloadFlagsFromGlobals applies download flags by checking global variables against their defaults
+func applyDownloadFlagsFromGlobals(flags *config.CliFlags) {
+	if flags.Download == nil {
+		flags.Download = &config.CliDownloadFlags{}
+	}
+
+	// Helper function to avoid duplication in default checking
+	if downloadConcurrencyFlag != -1 {
+		flags.Download.Concurrency = &downloadConcurrencyFlag
+	}
+	if downloadTagFlag != "" {
+		flags.Download.Tag = &downloadTagFlag
+	}
+	if downloadQueryFlag != "" {
+		flags.Download.Query = &downloadQueryFlag
+	}
+	if len(downloadModelTypesFlag) > 0 {
+		flags.Download.ModelTypes = &downloadModelTypesFlag
+	}
+	if len(downloadBaseModelsFlag) > 0 {
+		flags.Download.BaseModels = &downloadBaseModelsFlag
+	}
+	if downloadUsernameFlag != "" {
+		flags.Download.Username = &downloadUsernameFlag
+	}
+	if downloadNsfwFlag {
+		flags.Download.Nsfw = &downloadNsfwFlag
+	}
+	if downloadLimitFlag != -1 {
+		flags.Download.Limit = &downloadLimitFlag
+	}
+	if downloadMaxPagesFlag != -1 {
+		flags.Download.MaxPages = &downloadMaxPagesFlag
+	}
+	if downloadSortFlag != "" {
+		flags.Download.Sort = &downloadSortFlag
+	}
+	if downloadPeriodFlag != "" {
+		flags.Download.Period = &downloadPeriodFlag
+	}
+	if downloadModelIDFlag != 0 {
+		flags.Download.ModelID = &downloadModelIDFlag
+	}
+	if downloadModelVersionIDFlag != 0 {
+		flags.Download.ModelVersionID = &downloadModelVersionIDFlag
+	}
+	if downloadPrimaryOnlyFlag {
+		flags.Download.PrimaryOnly = &downloadPrimaryOnlyFlag
+	}
+	if downloadPrunedFlag {
+		flags.Download.Pruned = &downloadPrunedFlag
+	}
+	if downloadFp16Flag {
+		flags.Download.Fp16 = &downloadFp16Flag
+	}
+	if downloadAllVersionsFlag {
+		flags.Download.AllVersions = &downloadAllVersionsFlag
+	}
+	if len(downloadIgnoreBaseModelsFlag) > 0 {
+		flags.Download.IgnoreBaseModels = &downloadIgnoreBaseModelsFlag
+	}
+	if len(downloadIgnoreFileNameStringsFlag) > 0 {
+		flags.Download.IgnoreFileNameStrings = &downloadIgnoreFileNameStringsFlag
+	}
+	if downloadYesFlag {
+		flags.Download.SkipConfirmation = &downloadYesFlag
+	}
+	if downloadMetadataFlag {
+		flags.Download.SaveMetadata = &downloadMetadataFlag
+	}
+	if downloadModelInfoFlag {
+		flags.Download.SaveModelInfo = &downloadModelInfoFlag
+	}
+	if downloadVersionImagesFlag {
+		flags.Download.SaveVersionImages = &downloadVersionImagesFlag
+	}
+	if downloadModelImagesFlag {
+		flags.Download.SaveModelImages = &downloadModelImagesFlag
+	}
+	if downloadMetaOnlyFlag {
+		flags.Download.DownloadMetaOnly = &downloadMetaOnlyFlag
+	}
+}
+
+// applyImagesFlagsFromGlobals applies images flags by checking global variables against their defaults
+func applyImagesFlagsFromGlobals(flags *config.CliFlags) {
+	if flags.Images == nil {
+		flags.Images = &config.CliImagesFlags{}
+	}
+
+	if imagesLimitFlag != -1 {
+		flags.Images.Limit = &imagesLimitFlag
+	}
+	if imagesPostIDFlag != 0 {
+		flags.Images.PostID = &imagesPostIDFlag
+	}
+	if imagesModelIDFlag != 0 {
+		flags.Images.ModelID = &imagesModelIDFlag
+	}
+	if imagesModelVersionIDFlag != 0 {
+		flags.Images.ModelVersionID = &imagesModelVersionIDFlag
+	}
+	if imagesUsernameFlag != "" {
+		flags.Images.Username = &imagesUsernameFlag
+	}
+	if imagesNsfwFlag != "" {
+		flags.Images.Nsfw = &imagesNsfwFlag
+	}
+	if imagesSortFlag != "" {
+		flags.Images.Sort = &imagesSortFlag
+	}
+	if imagesPeriodFlag != "" {
+		flags.Images.Period = &imagesPeriodFlag
+	}
+	if imagesMaxPagesFlag != -1 {
+		flags.Images.MaxPages = &imagesMaxPagesFlag
+	}
+	if imagesOutputDirFlag != "" {
+		flags.Images.OutputDir = &imagesOutputDirFlag
+	}
+	if imagesConcurrencyFlag != -1 {
+		flags.Images.Concurrency = &imagesConcurrencyFlag
+	}
+	if imagesMetadataFlag {
+		flags.Images.SaveMetadata = &imagesMetadataFlag
+	}
+}
+
+// applyPersistentFlags applies persistent flags to the CliFlags structure
+func applyPersistentFlags(cmd *cobra.Command, flags *config.CliFlags) {
+	if cmd.PersistentFlags().Changed("config") {
+		flags.ConfigFilePath = &cfgFile
+	}
+
+	if logLevelFlagValue != "info" {
+		flags.LogLevel = &logLevelFlagValue
+	}
+
+	if logFormatFlagValue != logFormatText {
+		flags.LogFormat = &logFormatFlagValue
+	}
+
+	if logApiFlag {
+		log.Debugf("[loadGlobalConfig] --log-api flag detected as true.")
+		flags.LogApiRequests = &logApiFlag
 	} else {
-		// Find home directory.
-		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
-
-		// Search config in home directory with name ".go-civitai-downloader" (without extension).
-		viper.AddConfigPath(home)
-		// Add current directory path
-		viper.AddConfigPath(".")
-		viper.SetConfigName("config") // Name of config file (without extension)
-		viper.SetConfigType("toml")   // REQUIRED if the config file does not have the extension in the name
+		log.Debugf("[loadGlobalConfig] --log-api flag not detected or is false.")
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
-
-	// Normalize keys (e.g., from config like BaseModels to BASMODELS)
-	// Might help resolve precedence issues with bound flags
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		log.Infof("Using configuration file: %s", viper.ConfigFileUsed())
-		// Try merging again AFTER potential flag bindings? Seems redundant but maybe forces precedence.
-		// if mergeErr := viper.MergeInConfig(); mergeErr != nil {
-		// 	log.WithError(mergeErr).Warnf("Error merging config file after read: %s", viper.ConfigFileUsed())
-		// }
+	if savePathFlag != "" {
+		log.Debugf("[loadGlobalConfig] --save-path flag detected, value: '%s'", savePathFlag)
+		flags.SavePath = &savePathFlag
 	} else {
-		// Handle errors reading the config file
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Config file not found; ignore error if desired
-			log.Warnf("Config file not found. Using defaults and flags.")
-		} else {
-			// Config file was found but another error was produced
-			log.WithError(err).Warnf("Error reading config file: %s", viper.ConfigFileUsed())
-			// Don't make it fatal, let flags/defaults take over
+		log.Debugf("[loadGlobalConfig] --save-path flag not detected or is default empty string.")
+	}
+
+	if apiDelayFlag != -1 {
+		log.Debugf("[loadGlobalConfig] --api-delay flag detected, value: %d", apiDelayFlag)
+		flags.APIDelayMs = &apiDelayFlag
+	} else {
+		log.Debugf("[loadGlobalConfig] --api-delay flag not detected or is default -1.")
+	}
+
+	if apiTimeoutFlag != -1 {
+		log.Debugf("[loadGlobalConfig] --api-timeout flag detected, value: %d", apiTimeoutFlag)
+		flags.APIClientTimeoutSec = &apiTimeoutFlag
+	} else {
+		log.Debugf("[loadGlobalConfig] --api-timeout flag not detected or is default -1.")
+	}
+}
+
+// applyCommandSpecificFlags applies flags specific to the current command
+func applyCommandSpecificFlags(cmd *cobra.Command, flags *config.CliFlags) {
+	switch cmd.Name() {
+	case "download":
+		applyDownloadFlags(cmd, flags)
+	case "images":
+		applyImagesFlags(cmd, flags)
+	case "show-config":
+		if cmd.Parent() != nil && cmd.Parent().Name() == "debug" {
+			log.Debug("[loadGlobalConfig] Detected 'debug show-config'. Populating Download and Images flags from global vars.")
+			applyDownloadFlagsFromGlobals(flags)
+			applyImagesFlagsFromGlobals(flags)
 		}
-	}
-	// --- Try merging config AFTER reading and AutomaticEnv ---
-	if viper.ConfigFileUsed() != "" { // Only merge if a config file was actually used
-		if err := viper.MergeInConfig(); err != nil {
-			log.WithError(err).Warnf("Error explicitly merging config file: %s", viper.ConfigFileUsed())
+	case "torrent":
+		flags.Torrent = &config.CliTorrentFlags{}
+		if cmd.Flags().Changed("output-dir") {
+			flags.Torrent.OutputDir = &torrentOutputDir
 		}
-	}
-	// --- End Viper config file reading ---
-
-	// --- Unmarshal directly from the global viper instance AFTER ReadInConfig/Merge ---
-	if err := viper.Unmarshal(&globalConfig); err != nil {
-		log.WithError(err).Warnf("Error unmarshalling config into globalConfig struct: %v", err)
-		// Don't make it fatal, allow commands to proceed with defaults/flags if possible.
-	}
-
-	// --- REMOVED: Manual merge of loaded config values into Viper ---
-
-	log.Debug("Config loaded (or attempted). Viper will manage value precedence.")
-
-	baseTransport := http.DefaultTransport
-
-	// Check if API logging is enabled using Viper
-	globalHttpTransport = baseTransport // Default to base transport
-	log.Debugf("Initial globalHttpTransport type: %T", globalHttpTransport)
-
-	if viper.GetBool("logapirequests") {
-		log.Debug("API request logging enabled (via Viper), wrapping global HTTP transport.")
-		// Define log file path
-		logFilePath := "api.log"
-		// Attempt to resolve relative to SavePath if possible, otherwise use current dir
-		// Get SavePath using Viper
-		savePath := viper.GetString("savepath")
-		if savePath != "" {
-			// Ensure SavePath exists (it might not if config loading failed partially)
-			if _, statErr := os.Stat(savePath); statErr == nil {
-				logFilePath = filepath.Join(savePath, logFilePath)
-			} else {
-				log.Warnf("SavePath '%s' (from Viper) not found, saving api.log to current directory.", savePath)
+		if cmd.Flags().Changed("overwrite") {
+			flags.Torrent.Overwrite = &overwriteTorrents
+		}
+		if cmd.Flags().Changed("magnet-links") {
+			flags.Torrent.MagnetLinks = &generateMagnetLinks
+		}
+		if cmd.Flags().Changed("concurrency") {
+			flags.Torrent.Concurrency = &torrentConcurrencyFlag
+		}
+	case "verify":
+		if cmd.Parent() != nil && cmd.Parent().Name() == "db" {
+			if flags.DB == nil {
+				flags.DB = &config.CliDBFlags{}
+			}
+			if flags.DB.Verify == nil {
+				flags.DB.Verify = &config.CliDBVerifyFlags{}
+			}
+			if cmd.Flags().Changed("check-hash") {
+				flags.DB.Verify.CheckHash = &DbVerifyCheckHashFlag
+			}
+			if cmd.Flags().Changed("yes") {
+				flags.DB.Verify.AutoRedownload = &DbVerifyYesFlag
 			}
 		}
-		log.Infof("API logging to file: %s", logFilePath)
-
-		// Initialize the logging transport
-		loggingTransport, err := api.NewLoggingTransport(baseTransport, logFilePath)
-		if err != nil {
-			log.WithError(err).Error("Failed to initialize API logging transport, logging disabled.")
-			// Keep globalHttpTransport as baseTransport
-		} else {
-			globalHttpTransport = loggingTransport // Use the wrapped transport
+	case "clean":
+		flags.Clean = &config.CliCleanFlags{}
+		if cmd.Flags().Changed("torrents") {
+			flags.Clean.Torrents = &cleanTorrentsFlag
+		}
+		if cmd.Flags().Changed("magnets") {
+			flags.Clean.Magnets = &cleanMagnetsFlag
 		}
 	}
-	// --- End Setup Global HTTP Transport ---
+}
 
-	// If successful or partially successful, globalConfig is populated for use by commands.
-	// BUT: Rely on viper.Get*() for values potentially overridden by flags.
+// loadGlobalConfig populates the config.CliFlags struct and initializes the global configuration
+func loadGlobalConfig(cmd *cobra.Command, args []string) error {
+	log.Debug("Attempting to load global configuration...")
+	flags := config.CliFlags{}
+
+	// Apply persistent flags
+	applyPersistentFlags(cmd, &flags)
+
+	// Configure early logging
+	configureLoggingFromFlags(logLevelFlagValue, logFormatFlagValue)
+	log.Debug("Initial logging configured from flags (before config file load)")
+
+	// Apply command-specific flags
+	applyCommandSpecificFlags(cmd, &flags)
+
+	log.Debugf("[loadGlobalConfig] Initializing config with CliFlags: %+v", flags)
+	if flags.Download != nil {
+		log.Debugf("[loadGlobalconfig] CliFlags.Download: %+v", *flags.Download)
+	}
+	if flags.Images != nil {
+		log.Debugf("[loadGlobalconfig] CliFlags.Images: %+v", *flags.Images)
+	}
+
+	var err error
+	globalConfig, globalHttpTransport, err = config.Initialize(flags)
+	if err != nil {
+		log.Errorf("Failed to initialize configuration: %v", err)
+		return err
+	}
+
+	// Reconfigure logging with final config
+	log.Debug("Re-configuring logging based on final loaded configuration...")
+	configureLogging(&globalConfig)
+
+	log.Debugf("Global configuration loaded: %+v", globalConfig)
+	log.Debugf("Global HTTP transport configured: type %T", globalHttpTransport)
+
 	return nil
+}
+
+// configureLoggingFromFlags sets up initial logging based *only* on flag values.
+// This is used before the full config is loaded to see early debug messages.
+func configureLoggingFromFlags(levelStr, formatStr string) {
+	level, err := log.ParseLevel(levelStr)
+	if err != nil {
+		log.Warnf("Invalid log level '%s' from flag, using default 'info'. Error: %v", levelStr, err)
+		level = log.InfoLevel
+	}
+
+	log.SetLevel(level)
+
+	switch formatStr {
+	case "json":
+		log.SetFormatter(&log.JSONFormatter{})
+	case logFormatText:
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp: true,
+		})
+	default:
+		log.Warnf("Invalid log format '%s' from flag, using default 'text'.", formatStr)
+		log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
+	}
+}
+
+// configureLogging sets up logrus based on the final loaded configuration.
+func configureLogging(cfg *models.Config) {
+	if cfg == nil {
+		log.Error("configureLogging called with nil config")
+		return
+	}
+	log.Debugf("[configureLogging] Received config LogLevel: '%s'", cfg.LogLevel)
+
+	level, err := log.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		log.Warnf("Invalid log level '%s' in config, using default 'info'. Error: %v", cfg.LogLevel, err)
+		level = log.InfoLevel
+	}
+
+	log.SetLevel(level)
+
+	switch cfg.LogFormat {
+	case "json":
+		log.SetFormatter(&log.JSONFormatter{})
+	case logFormatText:
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp: true,
+			// ForceColors:   true, // Optional: Force colors even without TTY
+		})
+	default:
+		log.Warnf("Invalid log format '%s' in config, using default 'text'.", cfg.LogFormat)
+		log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
+	}
+	log.Infof("Logging configured: Level=%s, Format=%s", level.String(), cfg.LogFormat)
 }

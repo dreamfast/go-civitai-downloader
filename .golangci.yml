@@ -1,0 +1,105 @@
+# golangci-lint configuration for civitai-downloader
+# See https://golangci-lint.run/usage/configuration/ for details
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - shadow  # Disable shadow checking for now
+  gocyclo:
+    min-complexity: 30  # More relaxed for existing codebase
+  misspell:
+    locale: US
+  lll:
+    line-length: 140  # More relaxed
+  goimports:
+    local-prefixes: go-civitai-download
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+    disabled-checks:
+      - commentedOutCode
+  funlen:
+    lines: 150  # More relaxed
+    statements: 80  # More relaxed
+  cyclop:
+    max-complexity: 30  # More relaxed
+  nestif:
+    min-complexity: 8  # More relaxed
+  gocognit:
+    min-complexity: 50  # More relaxed for existing code
+
+linters:
+  disable-all: true
+  enable:
+    # Essential linters for quality
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Go vet examiner
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Staticcheck is a go vet on steroids
+    - typecheck     # Parse and type-check Go code
+    - unused        # Check for unused constants, variables, functions and types
+    
+    # Formatting and style
+    - gofmt         # Checks whether code was gofmt-ed
+    - goimports     # Check imports formatting
+    - misspell      # Finds commonly misspelled English words in comments
+    
+    # Security and best practices
+    - gosec         # Inspects source code for security problems
+    - goconst       # Finds repeated strings that could be replaced by a constant
+    
+    # Complexity (with relaxed thresholds)
+    - gocyclo       # Cyclomatic complexity
+    - cyclop        # Package cyclomatic complexity
+    
+    # Performance
+    - unconvert     # Remove unnecessary type conversions
+    - prealloc      # Preallocate slices
+    
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - gosec
+        - cyclop
+        - funlen
+    
+    # Exclude specific directories
+    - path: internal/database/sqlite_integration_test\.go
+      linters:
+        - errcheck  # Allow unchecked errors in integration tests
+    
+    # Exclude specific patterns
+    - text: "Error return value of.*is not checked"
+      linters:
+        - errcheck
+      path: _test\.go
+  
+  # Show only new issues
+  new: false
+  
+  # Maximum issues count per one linter (0 = unlimited)
+  max-issues-per-linter: 50
+  
+  # Maximum count of issues with the same text
+  max-same-issues: 10
+
+severity:
+  default-severity: warning

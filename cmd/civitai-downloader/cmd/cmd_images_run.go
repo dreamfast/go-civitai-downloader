@@ -3,14 +3,10 @@ package cmd
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,189 +15,66 @@ import (
 	"github.com/gosuri/uilive"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
-	index "go-civitai-download/index"
+	"go-civitai-download/internal/api"
 	"go-civitai-download/internal/downloader"
 	"go-civitai-download/internal/models"
 )
 
 // runImages orchestrates the fetching and downloading of images based on command-line flags.
 func runImages(cmd *cobra.Command, args []string) {
-	// Read flags
-	modelID := viper.GetInt("images.modelId")
-	modelVersionID := viper.GetInt("images.modelVersionId")
-	username := viper.GetString("images.username")
-	limit := viper.GetInt("images.limit")
-	period := viper.GetString("images.period")
-	sort := viper.GetString("images.sort")
-	nsfw := viper.GetString("images.nsfw")
-	targetDir := viper.GetString("images.output_dir")
-	saveMeta := viper.GetBool("images.metadata")
-	numWorkers := viper.GetInt("images.concurrency")
-	maxPages := viper.GetInt("images.max_pages")
-	postID := viper.GetInt("images.postId")
+	cfg := globalConfig
 
-	// --- Early Exit for Debug Print API URL --- START ---
-	if printUrl, _ := cmd.Flags().GetBool("debug-print-api-url"); printUrl {
-		log.Info("--- Debug API URL (--debug-print-api-url) for Images ---")
-		// Construct URL parameters (logic duplicated/extracted from below)
-		baseURL := "https://civitai.com/api/v1/images"
-		params := url.Values{}
-		if modelVersionID != 0 {
-			params.Set("modelVersionId", strconv.Itoa(modelVersionID))
-		} else if modelID != 0 {
-			params.Set("modelId", strconv.Itoa(modelID))
-		} else if username != "" {
-			params.Set("username", username)
-		} else if postID != 0 {
-			params.Set("postId", strconv.Itoa(postID))
-		}
-		if limit > 0 && limit <= 200 {
-			params.Set("limit", strconv.Itoa(limit))
-		} else if limit != 100 {
-			log.Warnf("Invalid limit %d, using API default (100). Actual API call might use different default.", limit)
-			params.Set("limit", "100")
-		}
-		if period != "" {
-			params.Set("period", period)
-		}
-		if sort != "" {
-			params.Set("sort", sort)
-		}
-		if nsfw != "" {
-			params.Set("nsfw", nsfw)
-		}
-		// Note: Does not include cursor logic, as this prints the base URL for the first page.
-		requestURL := baseURL + "?" + params.Encode()
-		fmt.Println(requestURL) // Print only the URL to stdout
-		log.Info("Exiting after printing images API URL.")
-		os.Exit(0) // Exit immediately
-	}
-	// --- Early Exit for Debug Print API URL --- END ---
+	userTotalLimit := cfg.Images.Limit
+	targetDir := cfg.Images.OutputDir
+	saveMeta := cfg.Images.SaveMetadata
+	numWorkers := cfg.Images.Concurrency
+	maxPages := cfg.Images.MaxPages
 
-	// --- Display Effective Config & Confirm --- START ---
-	// Skip display/confirmation if global --yes flag is provided
-	if !viper.GetBool("skipconfirmation") {
-		log.Info("--- Review Effective Configuration (Images Command) ---")
+	handleDebugAPIURL(cmd, &cfg)
 
-		// 1. Global Settings (Relevant to Images)
-		globalSettings := map[string]interface{}{
-			"SavePath":            viper.GetString("savepath"),
-			"OutputDir":           viper.GetString("images.output_dir"), // Display explicit output dir
-			"ApiKeySet":           viper.GetString("apikey") != "",      // Show if API key is present
-			"ApiClientTimeoutSec": viper.GetInt("apiclienttimeoutsec"),
-			"ApiDelayMs":          viper.GetInt("apidelayms"),
-			"LogApiRequests":      viper.GetBool("logapirequests"),
-			"Concurrency":         viper.GetInt("images.concurrency"), // Show image-specific concurrency
-		}
-		globalJSON, _ := json.MarshalIndent(globalSettings, "  ", "  ")
-		fmt.Println("  --- Global Settings (Relevant to Images) ---")
-		fmt.Println("  " + strings.ReplaceAll(string(globalJSON), "\n", "\n  "))
+	confirmConfiguration(&cfg)
 
-		// 2. Image API Parameters
-		imageAPIParams := map[string]interface{}{
-			"ModelID":        viper.GetInt("images.modelId"),
-			"ModelVersionID": viper.GetInt("images.modelVersionId"),
-			"PostID":         viper.GetInt("images.postId"),
-			"Username":       viper.GetString("images.username"),
-			"Limit":          viper.GetInt("images.limit"),
-			"Period":         viper.GetString("images.period"),
-			"Sort":           viper.GetString("images.sort"),
-			"NSFW":           viper.GetString("images.nsfw"),
-			"MaxPages":       viper.GetInt("images.max_pages"),
-			"SaveMetadata":   viper.GetBool("images.metadata"),
-		}
-		apiParamsJSON, _ := json.MarshalIndent(imageAPIParams, "  ", "  ")
-		fmt.Println("\n  --- Image API Parameters ---")
-		fmt.Println("  " + strings.ReplaceAll(string(apiParamsJSON), "\n", "\n  "))
-
-		// Confirmation Prompt
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("\nProceed with these settings? (y/N): ")
-		input, _ := reader.ReadString('\n')
-		input = strings.ToLower(strings.TrimSpace(input))
-
-		if input != "y" {
-			log.Info("Operation cancelled by user.")
-			os.Exit(0)
-		}
-		log.Info("Configuration confirmed.")
-	} else {
-		log.Info("Skipping configuration review due to --yes flag or config setting.")
-	}
-	// --- Display Effective Config & Confirm --- END ---
-
-	// Add log to confirm concurrency level
 	log.Infof("Using image download concurrency level: %d", numWorkers)
 
-	// Default output dir if not provided
-	if targetDir == "" {
-		if globalConfig.SavePath == "" {
-			log.Fatal("Required configuration 'SavePath' is not set and --output-dir flag was not provided.")
-		}
-		targetDir = filepath.Join(globalConfig.SavePath, "images")
-		log.Infof("Output directory not specified, using default: %s", targetDir)
-	}
+	targetDir = validateAndSetTargetDir(targetDir, &cfg)
 
-	// Validate flags
-	if modelID == 0 && modelVersionID == 0 && username == "" {
-		log.Fatal("At least one of --model-id, --model-version-id, or --username must be provided")
-	}
-	if modelVersionID != 0 {
-		log.Infof("Filtering images by Model Version ID: %d (overrides --model-id)", modelVersionID)
-		modelID = 0
-	}
+	validatePrimaryFilters(&cfg)
 
-	// --- API Client Setup (standard http client) ---
 	if globalHttpTransport == nil {
 		log.Warn("Global HTTP transport not initialized, using default.")
 		globalHttpTransport = http.DefaultTransport
 	}
-	apiClient := &http.Client{
+	httpClient := &http.Client{
 		Transport: globalHttpTransport,
-		Timeout:   time.Duration(globalConfig.ApiClientTimeoutSec) * time.Second,
+		Timeout:   0, // Set to 0 to avoid conflict with logging transport, like in downloadCmd
 	}
 
-	// --- Fetch Image List ---
+	// This apiClient is used for all API calls in this command
+	apiClient := api.NewClient(cfg.APIKey, httpClient, cfg)
+
+	// --- Pre-fetch ModelID if only ModelVersionID is provided ---
+	prefetchedModelID := cfg.Images.ModelID
+	if prefetchedModelID == 0 && cfg.Images.ModelVersionID != 0 {
+		log.Infof("Fetching model details for version %d to find parent model ID...", cfg.Images.ModelVersionID)
+		versionDetails, err := apiClient.GetModelVersionDetails(cfg.Images.ModelVersionID)
+		if err != nil {
+			log.WithError(err).Fatalf("Failed to get model details for version %d. Cannot proceed.", cfg.Images.ModelVersionID)
+		}
+		prefetchedModelID = versionDetails.ModelId
+		log.Infof("Found parent ModelID: %d", prefetchedModelID)
+	}
+	// --- End Pre-fetch ---
+
 	log.Info("Fetching image list from Civitai API...")
-
 	var allImages []models.ImageApiItem
-	baseURL := "https://civitai.com/api/v1/images"
-	params := url.Values{}
-	userTotalLimit := viper.GetInt("images.limit") // User's intended total limit (0 = unlimited)
-
-	if modelVersionID != 0 {
-		params.Set("modelVersionId", strconv.Itoa(modelVersionID))
-	} else if modelID != 0 {
-		params.Set("modelId", strconv.Itoa(modelID))
-	} else if username != "" {
-		params.Set("username", username)
-	} else if postID != 0 {
-		params.Set("postId", strconv.Itoa(postID))
-	}
-
-	// Use API default/max limit per page (e.g., 100 or 200) for efficiency.
-	// Do NOT send the user's total limit here.
-	params.Set("limit", "100") // Request a reasonable number per page
-
-	// These parameters are still valid API parameters to send
-	if period != "" {
-		params.Set("period", period)
-	}
-	if sort != "" {
-		params.Set("sort", sort)
-	}
-	if nsfw != "" {
-		params.Set("nsfw", nsfw)
-	}
+	initialApiParams := CreateImageQueryParams(&cfg)
 
 	pageCount := 0
 	var nextCursor string
 	var loopErr error
 
 	log.Info("--- Starting Image Fetching ---")
-
 	for {
 		pageCount++
 		if maxPages > 0 && pageCount > maxPages {
@@ -209,76 +82,14 @@ func runImages(cmd *cobra.Command, args []string) {
 			break
 		}
 
-		currentParams := params
+		currentApiParams := initialApiParams
 		if nextCursor != "" {
-			currentParams.Set("cursor", nextCursor)
+			currentApiParams.Cursor = nextCursor
 		}
-		requestURL := baseURL + "?" + currentParams.Encode()
 
-		log.Debugf("Requesting Image URL (Page %d inferred, Cursor: %s): %s", pageCount, nextCursor, requestURL)
-
-		// --- Check for debug flag --- NEW
-		if printUrl, _ := cmd.Flags().GetBool("debug-print-api-url"); printUrl {
-			fmt.Println(requestURL) // Print only the URL to stdout
-			os.Exit(0)              // Exit immediately
-		}
-		// --- End check for debug flag --- NEW
-
-		req, err := http.NewRequest("GET", requestURL, nil)
+		_, response, err := apiClient.GetImages(nextCursor, currentApiParams)
 		if err != nil {
-			loopErr = fmt.Errorf("failed to create request for page %d: %w", pageCount, err)
-			break
-		}
-		if globalConfig.ApiKey != "" {
-			req.Header.Add("Authorization", "Bearer "+globalConfig.ApiKey)
-		}
-
-		resp, err := apiClient.Do(req)
-		if err != nil {
-			if urlErr, ok := err.(*url.Error); ok && urlErr.Timeout() {
-				log.WithError(err).Warnf("Timeout fetching image metadata page %d. Retrying after delay...", pageCount)
-				time.Sleep(5 * time.Second)
-				continue
-			}
 			loopErr = fmt.Errorf("failed to fetch image metadata page %d: %w", pageCount, err)
-			break
-		}
-
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.WithError(closeErr).Warn("Error closing image API response body")
-		}
-
-		if readErr != nil {
-			loopErr = fmt.Errorf("failed to read response body (Page %d): %w", pageCount, readErr)
-			break
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			errMsg := fmt.Sprintf("Image API request failed (Page %d inferred) with status %s", pageCount, resp.Status)
-			if len(bodyBytes) > 0 {
-				maxLen := 200
-				bodyStr := string(bodyBytes)
-				if len(bodyStr) > maxLen {
-					bodyStr = bodyStr[:maxLen] + "..."
-				}
-				errMsg += fmt.Sprintf(". Response: %s", bodyStr)
-			}
-			log.Error(errMsg)
-			if resp.StatusCode == http.StatusTooManyRequests {
-				log.Warn("Rate limited. Applying longer delay...")
-				delay := time.Duration(globalConfig.ApiDelayMs)*time.Millisecond*5 + 5*time.Second
-				time.Sleep(delay)
-				continue
-			}
-			loopErr = errors.New(errMsg)
-			break
-		}
-
-		var response models.ImageApiResponse
-		if err := json.Unmarshal(bodyBytes, &response); err != nil {
-			loopErr = fmt.Errorf("failed to decode image API response (Page %d): %w", pageCount, err)
-			log.WithError(err).Errorf("Response body sample: %s", string(bodyBytes[:min(len(bodyBytes), 200)]))
 			break
 		}
 
@@ -286,36 +97,32 @@ func runImages(cmd *cobra.Command, args []string) {
 			log.Info("Received empty items list from API. Assuming end of results.")
 			break
 		}
-
-		log.Infof("Received %d images from API page %d. Total collected: %d", len(response.Items), pageCount, len(allImages))
 		allImages = append(allImages, response.Items...)
+		log.Infof("Received %d images from API page %d. Total collected so far: %d", len(response.Items), pageCount, len(allImages))
 
-		// --- Check Total Limit --- START ---
 		if userTotalLimit > 0 && len(allImages) >= userTotalLimit {
 			log.Infof("Reached total image limit (%d). Stopping image fetching.", userTotalLimit)
-			allImages = allImages[:userTotalLimit] // Truncate to exact limit
-			break                                  // Stop fetching more pages
-		}
-		// --- Check Total Limit --- END ---
-
-		nextCursor = response.Metadata.NextCursor
-		if nextCursor == "" {
-			log.Info("No next cursor found. Finished fetching.")
+			allImages = allImages[:userTotalLimit]
 			break
 		}
 
-		log.Debugf("Next cursor found: %s", nextCursor)
+		nextCursor = response.Metadata.NextCursor
+		if nextCursor == "" {
+			log.Info("No next cursor found. Finished fetching all available images for the query.")
+			break
+		}
+		log.Debugf("Next cursor for images API: %s", nextCursor)
 
-		if globalConfig.ApiDelayMs > 0 {
-			log.Debugf("Applying API delay: %d ms", globalConfig.ApiDelayMs)
-			time.Sleep(time.Duration(globalConfig.ApiDelayMs) * time.Millisecond)
+		if cfg.APIDelayMs > 0 {
+			log.Debugf("Applying API delay: %d ms", cfg.APIDelayMs)
+			time.Sleep(time.Duration(cfg.APIDelayMs) * time.Millisecond)
 		}
 	}
 
 	if loopErr != nil {
-		log.WithError(loopErr).Error("Image fetching stopped due to error.")
+		log.WithError(loopErr).Error("Image fetching loop stopped due to an error.")
 		if len(allImages) == 0 {
-			log.Fatal("Exiting as no images were fetched before the error.")
+			log.Fatal("Exiting as no images were fetched before the error occurred.")
 		}
 		log.Warnf("Proceeding with %d images fetched before the error.", len(allImages))
 	} else {
@@ -323,108 +130,185 @@ func runImages(cmd *cobra.Command, args []string) {
 	}
 
 	if len(allImages) == 0 {
-		log.Info("No images found matching the criteria after fetching.")
+		log.Info("No images found matching the criteria after fetching from API.")
 		return
 	}
 	log.Infof("Found %d total images to potentially download.", len(allImages))
 
-	// --- Initialize Bleve Index --- START ---
-	// Use targetDir as base for index path, ensuring it's consistent
-	indexPath := globalConfig.BleveIndexPath
-	if indexPath == "" {
-		indexPath = filepath.Join(targetDir, "civitai_images.bleve") // Default if config is empty
-		log.Warnf("BleveIndexPath not set in config, defaulting index path for image downloads to: %s", indexPath)
-	} else {
-		// If a shared index path is provided, images might go into the same index
-		// Or we could append a sub-directory like "images"? For now, use the path directly.
-		// Example: If BleveIndexPath = /path/to/index, index will be at /path/to/index
-	}
-	log.Infof("Opening/Creating Bleve index at: %s", indexPath)
-	bleveIndex, err := index.OpenOrCreateIndex(indexPath)
-	if err != nil {
-		log.Fatalf("Failed to open or create Bleve index: %v", err)
-	}
-	defer func() {
-		log.Info("Closing Bleve index.")
-		if err := bleveIndex.Close(); err != nil {
-			log.Errorf("Error closing Bleve index: %v", err)
-		}
-	}()
-	log.Info("Bleve index opened successfully.")
-	// --- Initialize Bleve Index --- END ---
-
-	// --- Downloader Setup ---
-	downloadClient := &http.Client{
+	downloadHttpClient := &http.Client{
 		Transport: globalHttpTransport,
 		Timeout:   0,
 	}
-	dl := downloader.NewDownloader(downloadClient, globalConfig.ApiKey)
+	dl := downloader.NewDownloader(downloadHttpClient, cfg.APIKey)
 
-	// --- Target Directory ---
 	finalBaseTargetDir := targetDir
-	log.Infof("Ensuring base target directory exists: %s", finalBaseTargetDir)
+	log.Infof("Preparing to download images to base directory: %s", finalBaseTargetDir)
 	if err := os.MkdirAll(finalBaseTargetDir, 0750); err != nil {
-		log.WithError(err).Fatalf("Failed to create base target directory: %s", finalBaseTargetDir)
+		log.Fatalf("Failed to create base target directory %s: %v", finalBaseTargetDir, err)
 	}
 
-	// --- Download Workers ---
 	var wg sync.WaitGroup
 	jobs := make(chan imageJob, len(allImages))
+
+	var successCount, failureCount int64
+
 	writer := uilive.New()
 	writer.Start()
-
-	var successCount int64
-	var failureCount int64
+	defer writer.Stop()
 
 	log.Infof("Starting %d image download workers...", numWorkers)
-	for w := 1; w <= numWorkers; w++ {
+	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
-		go imageDownloadWorker(w, jobs, dl, &wg, writer, &successCount, &failureCount, saveMeta, finalBaseTargetDir, bleveIndex)
+		go imageDownloadWorker(i, jobs, dl, &wg, writer, &successCount, &failureCount, saveMeta, finalBaseTargetDir, apiClient, &cfg)
 	}
 
-	// --- Queue Jobs ---
-	log.Info("Queueing image download jobs...")
-	queuedCount := 0
-	for _, image := range allImages {
-		if image.URL == "" {
-			log.Warnf("Image ID %d has no URL, skipping.", image.ID)
+	log.Infof("Queueing %d image download jobs...", len(allImages))
+	for _, imageItem := range allImages {
+		if imageItem.URL == "" {
+			log.Warnf("Image ID %d (URL: '%s') has no URL or it's empty, skipping queueing.", imageItem.ID, imageItem.URL)
+			atomic.AddInt64(&failureCount, 1)
 			continue
 		}
 
-		job := imageJob{
-			SourceURL: image.URL,
-			ImageID:   image.ID,
-			Metadata:  image,
+		// Enrich the image item with the prefetched model ID if it's missing
+		if imageItem.ModelID == 0 && prefetchedModelID != 0 {
+			log.Debugf("Enriching image %d with prefetched ModelID %d", imageItem.ID, prefetchedModelID)
+			imageItem.ModelID = prefetchedModelID
 		}
-		jobs <- job
-		queuedCount++
+
+		jobs <- imageJob{
+			ImageID:   imageItem.ID,
+			SourceURL: imageItem.URL,
+			Metadata:  imageItem,
+		}
 	}
 	close(jobs)
-	log.Infof("Queued %d image jobs.", queuedCount)
+	log.Info("All image jobs queued.")
 
-	// --- Wait for Completion ---
-	log.Info("Waiting for image download workers to finish...")
+	log.Info("Waiting for image download workers to complete...")
 	wg.Wait()
-	writer.Stop()
+	log.Info("All image download workers finished.")
 
-	// --- Final Report ---
-	finalSuccessCount := atomic.LoadInt64(&successCount)
-	finalFailureCount := atomic.LoadInt64(&failureCount)
+	fmt.Println("--------------------------")
+	log.Infof("Image Download Summary:")
+	log.Infof("  Successfully Downloaded: %d", atomic.LoadInt64(&successCount))
+	log.Infof("  Failed Downloads:      %d", atomic.LoadInt64(&failureCount))
+	if saveMeta {
+		log.Infof("  (Metadata saving was attempted for successful downloads if enabled)")
+	}
+	fmt.Println("--------------------------")
+}
 
-	log.Infof("Image download process completed.")
-	log.Infof("Successfully downloaded: %d images", finalSuccessCount)
-	log.Infof("Failed to download: %d images", finalFailureCount)
+// CreateImageQueryParams extracts image-related settings from the config
+// and populates a models.ImageAPIParameters struct suitable for the Civitai images API.
+func CreateImageQueryParams(cfg *models.Config) models.ImageAPIParameters {
+	apiPageLimit := 100
 
-	if finalFailureCount > 0 {
-		log.Warn("Some image downloads failed. Check logs for details.")
+	if cfg.Images.Limit > 0 && cfg.Images.Limit <= 200 {
+		apiPageLimit = cfg.Images.Limit
 	}
 
-	fmt.Println("----- Download Summary -----")
-	fmt.Printf(" Target Base Directory: %s\n", finalBaseTargetDir)
-	fmt.Printf(" Total Images Found API: %d\n", len(allImages))
-	fmt.Printf(" Images Queued: %d\n", queuedCount)
-	fmt.Printf(" Successfully Downloaded: %d\n", finalSuccessCount)
-	fmt.Printf(" Failed Downloads: %d\n", finalFailureCount)
-	fmt.Printf(" Metadata Saved: %t\n", saveMeta)
-	fmt.Println("--------------------------")
+	params := models.ImageAPIParameters{
+		ModelID:        cfg.Images.ModelID,
+		ModelVersionID: cfg.Images.ModelVersionID,
+		PostID:         cfg.Images.PostID,
+		Username:       cfg.Images.Username,
+		Limit:          apiPageLimit,
+		Sort:           cfg.Images.Sort,
+		Period:         cfg.Images.Period,
+		Nsfw:           cfg.Images.Nsfw,
+	}
+
+	log.Debugf("Created Image API Params: ModelID=%d, ModelVersionID=%d, PostID=%d, Username='%s', Limit=%d, Sort='%s', Period='%s', Nsfw='%s'",
+		params.ModelID, params.ModelVersionID, params.PostID, params.Username, params.Limit, params.Sort, params.Period, params.Nsfw)
+	return params
+}
+
+// handleDebugAPIURL handles the debug API URL flag
+func handleDebugAPIURL(cmd *cobra.Command, cfg *models.Config) {
+	if printUrlFlag, _ := cmd.Flags().GetBool("debug-print-api-url"); printUrlFlag {
+		log.Info("--- Debug API URL (--debug-print-api-url) for Images ---")
+		tempApiParams := CreateImageQueryParams(cfg)
+		tempUrlValues := api.ConvertImageAPIParamsToURLValues(tempApiParams)
+		requestURL := fmt.Sprintf("%s/images?%s", api.CivitaiApiBaseUrl, tempUrlValues.Encode())
+		fmt.Println(requestURL)
+		log.Info("Exiting after printing images API URL.")
+		os.Exit(0)
+	}
+}
+
+// confirmConfiguration displays configuration and asks for user confirmation
+func confirmConfiguration(cfg *models.Config) {
+	if !cfg.Download.SkipConfirmation {
+		log.Info("--- Review Effective Configuration (Images Command) ---")
+		globalSettings := map[string]interface{}{
+			"SavePath":            cfg.SavePath,
+			"OutputDir":           cfg.Images.OutputDir,
+			"ApiKeySet":           cfg.APIKey != "",
+			"ApiClientTimeoutSec": cfg.APIClientTimeoutSec,
+			"ApiDelayMs":          cfg.APIDelayMs,
+			"LogApiRequests":      cfg.LogApiRequests,
+			"Concurrency":         cfg.Images.Concurrency,
+		}
+		globalJSON, _ := json.MarshalIndent(globalSettings, "  ", "  ")
+		fmt.Println("  --- Global Settings (Relevant to Images) ---")
+		fmt.Println("  " + strings.ReplaceAll(string(globalJSON), "\n", "\n  "))
+
+		effectiveAPIParamsForDisplay := CreateImageQueryParams(cfg)
+		imageAPIParamsDisplay := map[string]interface{}{
+			"ModelID":        effectiveAPIParamsForDisplay.ModelID,
+			"ModelVersionID": effectiveAPIParamsForDisplay.ModelVersionID,
+			"PostID":         effectiveAPIParamsForDisplay.PostID,
+			"Username":       effectiveAPIParamsForDisplay.Username,
+			"APIPageLimit":   effectiveAPIParamsForDisplay.Limit,
+			"UserTotalLimit": cfg.Images.Limit,
+			"Period":         effectiveAPIParamsForDisplay.Period,
+			"Sort":           effectiveAPIParamsForDisplay.Sort,
+			"NSFW":           effectiveAPIParamsForDisplay.Nsfw,
+			"MaxPages":       cfg.Images.MaxPages,
+			"SaveMetadata":   cfg.Images.SaveMetadata,
+		}
+		apiParamsJSON, _ := json.MarshalIndent(imageAPIParamsDisplay, "  ", "  ")
+		fmt.Println("\n  --- Image API Parameters (Effective) ---")
+		fmt.Println("  " + strings.ReplaceAll(string(apiParamsJSON), "\n", "\n  "))
+
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("\nProceed with these settings? (y/N): ")
+		input, _ := reader.ReadString('\n')
+		input = strings.ToLower(strings.TrimSpace(input))
+		if input != "y" {
+			log.Info("Operation canceled by user.")
+			os.Exit(0)
+		}
+		log.Info("Configuration confirmed.")
+	} else {
+		log.Info("Skipping configuration review due to --yes flag or config setting.")
+	}
+}
+
+// validateAndSetTargetDir validates and sets the target directory
+func validateAndSetTargetDir(targetDir string, cfg *models.Config) string {
+	if targetDir == "" {
+		if cfg.SavePath == "" {
+			log.Fatal("Required configuration 'SavePath' is not set and --output-dir flag was not provided.")
+		}
+		targetDir = filepath.Join(cfg.SavePath, "images")
+		log.Infof("Output directory not specified, using default: %s", targetDir)
+	}
+	return targetDir
+}
+
+// validatePrimaryFilters validates that at least one primary filter is active
+func validatePrimaryFilters(cfg *models.Config) {
+	if cfg.Images.ModelVersionID != 0 {
+		log.Infof("Primary filter: Model Version ID %d", cfg.Images.ModelVersionID)
+	} else if cfg.Images.ModelID != 0 {
+		log.Infof("Primary filter: Model ID %d", cfg.Images.ModelID)
+	} else if cfg.Images.PostID != 0 {
+		log.Infof("Primary filter: Post ID %d", cfg.Images.PostID)
+	} else if cfg.Images.Username != "" {
+		log.Infof("Primary filter: Username '%s'", cfg.Images.Username)
+	} else {
+		log.Fatal("No primary filter (model-id, model-version-id, post-id, or username) is active for images command.")
+	}
 }

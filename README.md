@@ -4,11 +4,7 @@
 
 This is a command-line tool written in Go to download models from Civitai.com based on specified criteria. It features a two-phase download process (metadata scan + confirmation), concurrent downloads, local database tracking, file verification, and flexible configuration via a file and command-line flags.
 
-## Latest
-
-Currently the `dev` branch has the latest developments. Binaries from this branch can be found here [https://github.com/dreamfast/go-civitai-downloader/releases/tag/v0.0.01-dev-28042025](https://github.com/dreamfast/go-civitai-downloader/releases/tag/v0.0.01-dev-28042025).
-
-Focusing on confirming the current app works as expected, then will look to add IPFS support.
+Note: While I can do my best to test out, there are so many combinations using the CivitAi API. If you have any issues feel free to open an issue and I'll check it out!
 
 ## Features
 
@@ -17,8 +13,8 @@ Focusing on confirming the current app works as expected, then will look to add 
     1.  Scans the API based on criteria, checks against the local database, and identifies files *to be* downloaded.
     2.  Presents a summary (file count, total size) and asks for user confirmation before starting downloads.
 *   **Concurrent Downloads:** Downloads multiple files simultaneously (configurable concurrency level) for faster fetching.
-*   **Local Database:** Uses a Bitcask key/value store (default: `civitai_download_db`) to track successfully downloaded files (keyed by **Model Version ID**, e.g., `v_12345`), preventing redownloads and storing status (`Pending`, `Downloaded`, `Error`).
-*   **Gzip Compression:** Database entries are compressed using gzip for reduced storage space.
+*   **Local Database:** Uses SQLite relational database (default: `civitai.db`) to track downloaded files (keyed by **Model Version ID**, e.g., `v_2176536`), preventing redownloads and storing status (`Pending`, `Downloaded`, `Error`). Includes normalized schema with proper constraints, indexes, and separate tables for models, files, stats, images, and pagination state.
+*   **Database Management:** Full SQL querying capabilities for data inspection using any SQLite tool (CLI, browser, GUI applications).
 *   **Database Management Commands:**
     *   `db view`: List entries recorded in the database, including their **status** and **version ID key**.
     *   `db verify`: Check if files recorded in the database exist on disk and optionally verify their hashes. Includes status in log messages.
@@ -33,6 +29,7 @@ Focusing on confirming the current app works as expected, then will look to add 
 *   **Interactive Progress:** Uses uilive to show concurrent download progress.
 *   **Torrent Generation:** Command to generate `.torrent` and optional magnet link files for downloaded model directories.
 *   **Search Indexing (Experimental):** Uses Bleve to index downloaded items (metadata, file paths, torrent info) for potential future search features.
+*   **Images Path Configuration:** Configurable path patterns for images downloads using `{username}/{baseModel}` placeholders, allowing simple organization by author and base model.
 
 ## Caveats
 
@@ -77,11 +74,12 @@ Generally arguments passed into the application will override the config file se
 | :---------------------- | :--------- | :------------------- | :------------------------------------------------------------------------------------------------------ |
 | `ApiKey`                | `string`   | `""`                 | Your Civitai API Key (Required for downloading models).                                                  |
 | `SavePath`              | `string`   | `"downloads"`        | Root directory where model subdirectories (like `lora/sdxl_1.0/mymodel/`) will be saved.                 |
-| `DatabasePath`          | `string`   | `""`                 | Path to the database file. If empty, defaults to `[SavePath]/civitai_download_db`.                      |
+| `DatabasePath`          | `string`   | `""`                 | Path to the database file. If empty, defaults to `[SavePath]/civitai.db`.                        |
 | `BleveIndexPath`        | `string`   | `""`                 | Path to the Bleve search index directory. If empty, defaults to `[SavePath]/civitai.bleve`.            |
 | `Query`                 | `string`   | `""`                 | Default search query string.                                                                            |
 | `Tag`                   | `string`   | `""`                 | Default tag to filter by. (`-t, --tag` flag)                                                           |
 | `Username`              | `string`   | `""`                 | Default username to filter by. (`-u, --username` flag)                                                 |
+| `Images.PathPattern`    | `string`   | `"{username}/{baseModel}"` | Path pattern for organizing downloaded images using available placeholders from images API.    |
 | `ModelTypes`            | `[]string` | `[]`                 | Default model types to query (e.g., `["Checkpoint", "LORA"]`). Empty means all types.                |
 | `BaseModels`            | `[]string` | `[]`                 | Default base models to query (e.g., `["SDXL 1.0"]`). Empty means all base models.                     |
 | `IgnoreBaseModels`      | `[]string` | `[]`                 | List of base model strings to ignore (case-insensitive substring match). (`--ignore-base-models` flag) |
@@ -94,12 +92,12 @@ Generally arguments passed into the application will override the config file se
 | `IgnoreFileNameStrings` | `[]string` | `[]`                 | List of strings to ignore in filenames (case-insensitive substring match). (`--ignore-filename-strings` flag) |
 | `Sort`                  | `string`   | `"Most Downloaded"`  | Default sort order for API queries ("Highest Rated", "Most Downloaded", "Newest"). (`--sort` flag)      |
 | `Period`                | `string`   | `"AllTime"`          | Default time period for sorting ("AllTime", "Year", "Month", "Week", "Day"). (`--period` flag)        |
-| `Limit`                 | `int`      | `100`                | Default models per API page (1-100). (`--limit` flag)                                                   |
+| `Limit`                 | `int`      | `0`                  | Total download limit. 0 means unlimited. (`--limit` flag)                                                   |
 | `MaxPages`              | `int`      | `0`                  | Default maximum number of API pages to fetch (0 for no limit). (`--max-pages` flag)                     |
 | `Concurrency`           | `int`      | `4`                  | Default number of concurrent downloads. (`--concurrency` flag)                                          |
-| `Metadata`              | `bool`     | `false`              | Save a `.json` metadata file (containing the full version details) alongside downloads (overrides config `Metadata`).
-| `MetaOnly`              | `bool`     | `false`              | Scan, check DB, and save *only* the `.json` metadata files for potential downloads, skipping the actual model file download and confirmation prompt. Useful with `--model-info`.
-| `ModelInfo`             | `bool`     | `false`              | Save full model info JSON to `{SavePath}/{type}/{modelName}/{modelID}-{modelNameSlug}.json`. (`--model-info` flag)                          |
+| `SaveMetadata`          | `bool`     | `true`               | Save a `.json` metadata file (containing the full version details) alongside downloads. (`--metadata` flag) |
+| `MetaOnly`              | `bool`     | `false`              | Scan, check DB, and save *only* the `.json` metadata files for potential downloads, skipping the actual model file download and confirmation prompt. (`--meta-only` flag) |
+| `ModelInfo`             | `bool`     | `true`               | Save full model info JSON to `{SavePath}/{type}/{modelName}/{modelID}-{modelNameSlug}.json`. (`--model-info` flag)                          |
 | `VersionImages`         | `bool`     | `false`              | Download images associated with the specific downloaded version into `{SavePath}/{type}/{modelName}/{baseModel}/{versionID}-{fileNameSlug}/images/`. (`--version-images` flag)              |
 | `ModelImages`           | `bool`     | `false`              | When `ModelInfo` is true, also download all images for all versions into `{SavePath}/{type}/{modelName}/images/`. (`--model-images` flag)           |
 | `SkipConfirmation`      | `bool`     | `false`              | Skip the confirmation prompt before downloading. (`--yes` flag)                                       |
@@ -167,7 +165,7 @@ Scans the Civitai API based on filters, asks for confirmation, and then download
 *   `-m, --model-types strings`: Filter by model types (e.g., Checkpoint, LORA, LoCon).
 *   `-b, --base-models strings`: Filter by base model(s) (e.g., "SD 1.5", SDXL).
 *   `--nsfw`: Include NSFW models in query (overrides config `Nsfw`).
-*   `-l, --limit int`: Max models per API page (default 100).
+*   `-l, --limit int`: Total number of models/files to download. 0 means unlimited. Applied internally after API pagination rather than as API page size.
 *   `-s, --sort string`: Sort order (default "Most Downloaded").
 *   `-p, --period string`: Time period for sorting (default "AllTime").
 *   `--primary-only`: Only download primary files (overrides config `PrimaryOnly`).
@@ -179,12 +177,12 @@ Scans the Civitai API based on filters, asks for confirmation, and then download
 *   `--ignore-filename-strings strings`: Substrings in filenames to ignore (comma-separated or multiple flags, overrides config `IgnoreFileNameStrings`). *(No shorthand)*
 *   `-c, --concurrency int`: Number of concurrent downloads (overrides config `Concurrency`).
 *   `--max-pages int`: Maximum number of API pages to fetch (0 for no limit). *(No shorthand)*
-*   `--metadata`: Save a `.json` metadata file (containing the full version details) alongside downloads (overrides config `Metadata`).
+*   `--metadata`: Save a `.json` metadata file (containing the full version details) alongside downloads (overrides config `SaveMetadata`).
 *   `-y, --yes`: Skip confirmation prompt before downloading (overrides config `SkipConfirmation`).
 *   `--meta-only`: Scan, check DB, and save *only* the `.json` metadata files for potential downloads, skipping the actual model file download and confirmation prompt. Useful with `--model-info`.
 *   `--model-info`: During the scan phase, save the *full* JSON data for each model returned by the API to `{SavePath}/{type}/{modelName}/{modelID}-{modelNameSlug}.json`. Overwrites existing files.
 *   `--version-images`: After a model file download succeeds, download the associated preview/example images for that specific version into a `{SavePath}/{type}/{modelName}/{baseModel}/{versionID}-{fileNameSlug}/images/` subdirectory.
-*   `--model-images`: **Requires `--model-info`.** When saving the full model info JSON, also attempt to download *all* images associated with *all* versions listed in the model info. Images are saved into `{SavePath}/{type}/{modelName}/images/{versionId}/{imageId}.{ext}`.
+*   `--model-images`: **Requires `--model-info`.** When saving the full model info JSON, also attempt to download *all* images associated with *all* versions listed in the model info. Images are saved into `{SavePath}/{type}/{modelName}/images/`.
 *   `--all-versions`: Download all versions of a model, not just the latest (overrides version selection and config `AllVersions`).
 
 **Examples:**
@@ -233,7 +231,7 @@ Downloads images directly from the `/api/v1/images` endpoint based on various fi
 *   `-s, --sort string`: Sort order (Most Reactions, Most Comments, Newest, default "Newest").
 *   `-p, --period string`: Time period for sorting (AllTime, Year, Month, Week, Day, default "AllTime").
 *   `--max-pages int`: Maximum number of API pages to fetch (0 for no limit).
-*   `-o, --output-dir string`: Directory to save images (default `[SavePath]/images/{author}/{baseModel}/`).
+*   `-o, --output-dir string`: Directory to save images (default `[SavePath]/images/` organized by configured path pattern).
 *   `-c, --concurrency int`: Number of concurrent image downloads (default 4).
 *   `--metadata`: Save a `.json` metadata file (containing the ImageApiItem data) alongside each downloaded image.
 
@@ -418,63 +416,17 @@ Searches the local Bleve index for downloaded items (models, images, etc.) based
     ./civitai-downloader search +fileFormat:safetensor
     ```
 
-## Change Log
-
-### 28 August 2025
-
-*   Modified API query parameter handling:
-    *   The `nsfw` parameter is now always included in API requests (as `nsfw=true` or `nsfw=false`).
-    *   The `query` parameter is only included if a non-empty query string is provided.
-    *   Hoepefully the empty api results issue is now fixed
-*   Refactored integration test helper (`compareConfigAndURL`) for clarity and robustness.
-
-### 27 August 2025
-
-*   **Directory Structure Refinement:** Further adjustments to paths, these make the most sense now considering there can be different base models for the same model:
-    *   Model downloads are now saved to `{SavePath}/{type}/{modelName}/{baseModel}/{versionID}-{fileNameSlug}/{slugifiedOriginalFileName}.{ext}`.
-    *   Model info (`--model-info`) is saved to `{SavePath}/{type}/{modelName}/{modelID}-{modelNameSlug}.json`.
-    *   Model images (`--model-images`) are saved to `{SavePath}/{type}/{modelName}/images/{versionID}/{imageID}.ext`.
-    *   Version images (`--version-images`) path structure relative to the model file remains the same: `{SavePath}/{type}/{modelName}/{baseModel}/{versionID}-{fileNameSlug}/images/{imageID}.ext`.
-
-*   **Directory Structure Changes:** The structure of the downloaded files has changed to better reflect the model type and version. This may affect your existing downloads and running this application.
-    *   ~~Model downloads are now saved to `{type}/{baseModel}/{modelName}/{modelID}-{fileNameSlug}/{versionName}/{versionID}_{fileName}.ext`.~~
-    * If the model information arguments are passed, this will save in the same directory as the model file, with the versions.
-      * Running `--model-images` and `--version-images` might double up with images. Both are available if you just wanted to scrape model metadata and images.
-    *   ~~Model info (`--model-info`) is saved to `{type}/{baseModel}/{modelName}/{modelID}-{modelNameSlug}.json`.~~
-    *   ~~Model images (`--model-images`) are saved to `{type}/{baseModel}/{modelName}/images/{versionID}/{imageID}.ext`.~~
-    *   ~~Version images (`--version-images`) are saved to `{type}/{baseModel}/{modelName}/{versionID}-{fileNameSlug}/images/{imageID}.ext`.~~
-    *   We no longer use the `models_info` directory due to the new structure.
-*   **Version Metadata JSON:** The JSON file saved with `--metadata` now contains the full, unmodified `ModelVersion` data from the API. Previously this information was not complete.
-* The `--limit` will now stop after it's reached, and not continue to cycle over pagination.
-* It also seems the civitai API had incorrect file extensions, for example an image could be listed as .jpeg but actually is .webp :(. This has been fixed to use the correct file extension.
-* Fixed an issue where config.toml file values were not being properly carried through.
-* Fixed downloads not verifying filenames properly when ran twice, which resulted in re downloads.
-* Added a `torrent` command to generate `.torrent` files (and optional magnet links) for downloaded model directories, allowing for peer-to-peer sharing. Supports multiple tracker URLs, concurrency, and overwriting.
-* Integrated Bleve search indexing. Model metadata, file paths, and torrent information are now indexed when models are downloaded or torrents are generated. This lays the groundwork for future search capabilities (currently no direct user-facing search command via Bleve).
-
-### 26 August 2025
-
-* *Big* refactor for download and image modules.
-* **Important:** There have been changes to some of the argument names and config names to simplify them, refer to Configuration section for the new names.
-* New `--model-version-id` for `download` and `images` to target a specific version ID. This will generally override some other arguments.
-* Similarly, there is now a `--model-id` which will target an entire model.
-* When downloading images with `--model-images` and `--version-images` this now uses the concurrency amount set.
-* Added a `clean` command which will scan the downloads directory and remove any .tmp files left over from failed or cancelled downloads. This also can remove .torrent and -magnet.txt files.
-* The `db verify` command will now return what models are missing or have invalid hashes, and prompt the user to redownload them.
-* A new `--all-versions` flag for `download` which will download all versions of a model, not just the latest. The latest is by default.
-* The `torrent` command can now generate torrent files concurrently.
-
 ## Project Structure
 
 *   `cmd/civitai-downloader/`: Main application entry point and Cobra command definitions.
 *   `internal/`: Internal packages not intended for external use.
-    *   `api/`: Civitai API client logic.
-    *   `config/`: Configuration loading.
-    *   `database/`: Bitcask database interaction wrapper (including Gzip).
-    *   `downloader/`: File downloading logic (handles auth, temp files, hash check).
+    *   `api/`: Civitai API client logic with rate limiting, retries, and logging.
+    *   `config/`: Configuration loading and validation using Viper/TOML.
+    *   `database/`: SQLite relational database with normalized schema.
+    *   `downloader/`: File downloading with verification, concurrency, and progress tracking.
     *   `helpers/`: Utility functions.
-    *   `models/`: Struct definitions for config, API responses, database entries.
-*   `index/`: Bleve search indexing logic and item definition.
+    *   `models/`: Data structures for config, API responses, and database entries.
+    *   `paths/`: Path handling utilities.
 *   `Makefile`: Build/run/test/clean automation.
 *   `config.toml`: Default configuration file.
 
@@ -486,7 +438,7 @@ Searches the local Bleve index for downloaded items (models, images, etc.) based
 *   [github.com/BurntSushi/toml](https://github.com/BurntSushi/toml): TOML configuration parsing.
 *   [github.com/sirupsen/logrus](https://github.com/sirupsen/logrus): Structured logging.
 *   [github.com/gosuri/uilive](https://github.com/gosuri/uilive): Terminal live writer for progress.
-*   [git.mills.io/prologic/bitcask](https://git.mills.io/prologic/bitcask): Embedded key/value database.
-*   [lukechampine.com/blake3](https://lukechampine.com/blake3): BLAKE3 hashing.
+*   [github.com/mattn/go-sqlite3](https://github.com/mattn/go-sqlite3): SQLite database driver.
+*   [github.com/zeebo/blake3](https://github.com/zeebo/blake3): BLAKE3 hashing for file verification.
 *   [github.com/anacrolix/torrent](https://github.com/anacrolix/torrent): BitTorrent library (metainfo, bencode).
 *   [github.com/blevesearch/bleve](https://github.com/blevesearch/bleve): Full-text search and indexing library. 
