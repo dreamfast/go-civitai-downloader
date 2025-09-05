@@ -178,15 +178,12 @@ func handleModelImages(logPrefix string, pd potentialDownload, finalPath string,
 
 // WorkerContext holds the context for a download worker
 type WorkerContext struct {
-	// String first
-	LogPrefix       string
-	// Pointers
 	DB              *database.DB
 	FileDownloader  *downloader.Downloader
 	ImageDownloader *downloader.Downloader
 	Writer          *uilive.Writer
 	Config          *models.Config
-	// Integers
+	LogPrefix       string
 	ID              int
 	ProcessedCount  int
 	TotalJobs       int

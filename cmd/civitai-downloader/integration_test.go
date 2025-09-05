@@ -18,9 +18,9 @@ func TestCommandLineInterface(t *testing.T) {
 
 	tests := []struct {
 		name        string
+		expectOut   string
 		args        []string
 		expectError bool
-		expectOut   string
 	}{
 		{
 			name:        "Help command",
@@ -450,8 +450,8 @@ func TestErrorHandling(t *testing.T) {
 
 	tests := []struct {
 		name string
-		args []string
 		desc string
+		args []string
 	}{
 		{
 			name: "Invalid config file",

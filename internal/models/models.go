@@ -8,21 +8,20 @@ import (
 type (
 	// Config holds the application's configuration settings.
 	Config struct {
-		// Global settings - reordered for field alignment (strings first, then large structs, then ints, then bools)
-		APIKey              string         `toml:"ApiKey" json:"ApiKey"`
 		SavePath            string         `toml:"SavePath" json:"SavePath"`
 		DatabasePath        string         `toml:"DatabasePath" json:"DatabasePath"`
 		BleveIndexPath      string         `toml:"BleveIndexPath" json:"BleveIndexPath"`
 		LogLevel            string         `toml:"LogLevel" json:"LogLevel"`
 		LogFormat           string         `toml:"LogFormat" json:"LogFormat"`
+		APIKey              string         `toml:"ApiKey" json:"ApiKey"`
+		Torrent             TorrentConfig  `toml:"Torrent" json:"Torrent"`
 		Download            DownloadConfig `toml:"Download" json:"Download"`
 		Images              ImagesConfig   `toml:"Images" json:"Images"`
-		Torrent             TorrentConfig  `toml:"Torrent" json:"Torrent"`
-		DB                  DBConfig       `toml:"DB" json:"DB"`
 		APIDelayMs          int            `toml:"ApiDelayMs" json:"ApiDelayMs"`
 		APIClientTimeoutSec int            `toml:"ApiClientTimeoutSec" json:"ApiClientTimeoutSec"`
 		MaxRetries          int            `toml:"MaxRetries" json:"MaxRetries"`
 		InitialRetryDelayMs int            `toml:"InitialRetryDelayMs" json:"InitialRetryDelayMs"`
+		DB                  DBConfig       `toml:"DB" json:"DB"`
 		LogApiRequests      bool           `toml:"LogApiRequests" json:"LogApiRequests"`
 	}
 
@@ -105,49 +104,40 @@ type (
 
 	// Api Calls and Responses
 	QueryParameters struct {
-		// Strings first
-		Query              string `json:"query,omitempty"`
-		Tag                string `json:"tag,omitempty"`
-		Username           string `json:"username,omitempty"`
-		Sort               string `json:"sort"`
-		Period             string `json:"period"`
-		AllowCommercialUse string `json:"allowCommercialUse,omitempty"`
-		// Slices
-		Types      []string `json:"types,omitempty"`
-		BaseModels []string `json:"baseModels,omitempty"`
-		// Integers
-		Limit int `json:"limit"`
-		Page  int `json:"page,omitempty"`
-		// Bools
-		PrimaryFileOnly        bool   `json:"primaryFileOnly,omitempty"`
-		AllowNoCredit          bool   `json:"allowNoCredit,omitempty"`
-		AllowDerivatives       bool   `json:"allowDerivatives,omitempty"`
-		AllowDifferentLicenses bool   `json:"allowDifferentLicenses,omitempty"`
-		Nsfw                   bool   `json:"nsfw"`
-		Cursor                 string `json:"cursor,omitempty"`
+		Cursor                 string   `json:"cursor,omitempty"`
+		Tag                    string   `json:"tag,omitempty"`
+		Username               string   `json:"username,omitempty"`
+		Sort                   string   `json:"sort"`
+		Period                 string   `json:"period"`
+		AllowCommercialUse     string   `json:"allowCommercialUse,omitempty"`
+		Query                  string   `json:"query,omitempty"`
+		Types                  []string `json:"types,omitempty"`
+		BaseModels             []string `json:"baseModels,omitempty"`
+		Limit                  int      `json:"limit"`
+		Page                   int      `json:"page,omitempty"`
+		PrimaryFileOnly        bool     `json:"primaryFileOnly,omitempty"`
+		AllowNoCredit          bool     `json:"allowNoCredit,omitempty"`
+		AllowDerivatives       bool     `json:"allowDerivatives,omitempty"`
+		AllowDifferentLicenses bool     `json:"allowDifferentLicenses,omitempty"`
+		Nsfw                   bool     `json:"nsfw"`
 	}
 
 	Model struct {
-		// Strings first
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Type        string `json:"type"`
-		// Slices
-		AllowCommercialUse []string       `json:"allowCommercialUse"`
-		Tags               []string       `json:"tags"`
-		ModelVersions      []ModelVersion `json:"modelVersions"`
-		// Structs
-		Stats   Stats       `json:"stats"`
-		Creator Creator     `json:"creator"`
-		Meta    interface{} `json:"meta"` // Meta can be null or an object, so we use interface{}
-		// Integer
-		ID int `json:"id"`
-		// Bools
-		Poi                   bool `json:"poi"`
-		Nsfw                  bool `json:"nsfw"`
-		AllowNoCredit         bool `json:"allowNoCredit"`
-		AllowDerivatives      bool `json:"allowDerivatives"`
-		AllowDifferentLicense bool `json:"allowDifferentLicense"`
+		Meta                  interface{}    `json:"meta"`
+		Creator               Creator        `json:"creator"`
+		Description           string         `json:"description"`
+		Type                  string         `json:"type"`
+		Name                  string         `json:"name"`
+		AllowCommercialUse    []string       `json:"allowCommercialUse"`
+		Tags                  []string       `json:"tags"`
+		ModelVersions         []ModelVersion `json:"modelVersions"`
+		Stats                 Stats          `json:"stats"`
+		ID                    int            `json:"id"`
+		Poi                   bool           `json:"poi"`
+		Nsfw                  bool           `json:"nsfw"`
+		AllowNoCredit         bool           `json:"allowNoCredit"`
+		AllowDerivatives      bool           `json:"allowDerivatives"`
+		AllowDifferentLicense bool           `json:"allowDifferentLicense"`
 	}
 
 	Stats struct {
@@ -170,29 +160,25 @@ type (
 		Type string `json:"type"`
 		Mode string `json:"mode"` // Can be null, "Archived", "TakenDown"
 		// Bools
-		Nsfw bool   `json:"nsfw"`
-		Poi  bool   `json:"poi"`
+		Nsfw bool `json:"nsfw"`
+		Poi  bool `json:"poi"`
 	}
 
 	ModelVersion struct {
-		// Strings first
-		Name        string `json:"name"`
-		PublishedAt string `json:"publishedAt"`
-		UpdatedAt   string `json:"updatedAt"`
-		BaseModel   string `json:"baseModel"`
-		Description string `json:"description"`
-		DownloadUrl string `json:"downloadUrl"`
-		// Slices
-		TrainedWords []string     `json:"trainedWords"`
-		Files        []File       `json:"files"`
-		Images       []ModelImage `json:"images"`
-		// Structs
-		Stats Stats         `json:"stats"`
-		Model BaseModelInfo `json:"model"` // --- ADDED: Nested model info from /model-versions/{id} endpoint ---
-		// Integers
-		ID                   int `json:"id"`
-		ModelId              int `json:"modelId"`
-		EarlyAccessTimeFrame int `json:"earlyAccessTimeFrame"`
+		PublishedAt          string        `json:"publishedAt"`
+		UpdatedAt            string        `json:"updatedAt"`
+		BaseModel            string        `json:"baseModel"`
+		Description          string        `json:"description"`
+		DownloadUrl          string        `json:"downloadUrl"`
+		Name                 string        `json:"name"`
+		Model                BaseModelInfo `json:"model"`
+		TrainedWords         []string      `json:"trainedWords"`
+		Images               []ModelImage  `json:"images"`
+		Files                []File        `json:"files"`
+		Stats                Stats         `json:"stats"`
+		ID                   int           `json:"id"`
+		ModelId              int           `json:"modelId"`
+		EarlyAccessTimeFrame int           `json:"earlyAccessTimeFrame"`
 	}
 
 	File struct {
@@ -229,24 +215,18 @@ type (
 	}
 
 	ModelImage struct {
-		// Strings first
-		URL       string `json:"url"`
-		Hash      string `json:"hash"`      // Blurhash
-		CreatedAt string `json:"createdAt"` // Consider parsing to time.Time if needed
-		Username  string `json:"username"`
-		// Structs
-		Stats ImageStats `json:"stats"`
-		// Interfaces
-		NsfwLevel interface{} `json:"nsfwLevel"` // Changed to interface{} to handle number OR string from API
-		Meta      interface{} `json:"meta"`      // Often unstructured JSON, use interface{}
-		// Pointer to int
-		PostID *int `json:"postId"` // Use pointer for optional field
-		// Integers
-		ID     int `json:"id"`
-		Width  int `json:"width"`
-		Height int `json:"height"`
-		// Bool
-		Nsfw bool `json:"nsfw"` // Keep boolean for simplicity, align with Model struct Nsfw
+		NsfwLevel interface{} `json:"nsfwLevel"`
+		Meta      interface{} `json:"meta"`
+		PostID    *int        `json:"postId"`
+		URL       string      `json:"url"`
+		Hash      string      `json:"hash"`
+		CreatedAt string      `json:"createdAt"`
+		Username  string      `json:"username"`
+		Stats     ImageStats  `json:"stats"`
+		ID        int         `json:"id"`
+		Width     int         `json:"width"`
+		Height    int         `json:"height"`
+		Nsfw      bool        `json:"nsfw"`
 	}
 
 	ImageStats struct {
@@ -265,32 +245,28 @@ type (
 	// Added struct for pagination metadata based on API docs
 	PaginationMetadata struct {
 		// Strings first
-		NextPage    string `json:"nextPage"`
-		PrevPage    string `json:"prevPage"`   // Added based on API docs
-		NextCursor  string `json:"nextCursor"` // Added based on API docs (for images endpoint mainly)
+		NextPage   string `json:"nextPage"`
+		PrevPage   string `json:"prevPage"`   // Added based on API docs
+		NextCursor string `json:"nextCursor"` // Added based on API docs (for images endpoint mainly)
 		// Integers
-		TotalItems  int    `json:"totalItems"`
-		CurrentPage int    `json:"currentPage"`
-		PageSize    int    `json:"pageSize"`
-		TotalPages  int    `json:"totalPages"`
+		TotalItems  int `json:"totalItems"`
+		CurrentPage int `json:"currentPage"`
+		PageSize    int `json:"pageSize"`
+		TotalPages  int `json:"totalPages"`
 	}
 
 	// Internal file db entry for each model
 	DatabaseEntry struct {
-		// Strings first
+		Creator      Creator      `json:"creator"`
 		ModelName    string       `json:"modelName"`
 		ModelType    string       `json:"modelType"`
 		Filename     string       `json:"filename"`
 		Folder       string       `json:"folder"`
 		Status       string       `json:"status"`
 		ErrorDetails string       `json:"errorDetails,omitempty"`
-		// Structs
-		Version      ModelVersion `json:"version"`
 		File         File         `json:"file"`
-		Creator      Creator      `json:"creator"`
-		// 64-bit integers  
+		Version      ModelVersion `json:"version"`
 		Timestamp    int64        `json:"timestamp"`
-		// 32-bit integers
 		ModelID      int          `json:"modelId"`
 	}
 
@@ -299,44 +275,39 @@ type (
 	// ImageApiResponse represents the structure of the response from the /api/v1/images endpoint.
 	ImageApiResponse struct {
 		// Slices first
-		Items    []ImageApiItem     `json:"items"` // Renamed Image -> ImageApiItem to avoid conflict  
+		Items []ImageApiItem `json:"items"` // Renamed Image -> ImageApiItem to avoid conflict
 		// Structs
 		Metadata PaginationMetadata `json:"metadata"`
 	}
 
 	// ImageApiItem represents a single image item specifically from the /api/v1/images response.
 	ImageApiItem struct {
-		// Strings first
-		URL            string      `json:"url"`
-		Hash           string      `json:"hash"` // Blurhash
-		Username       string      `json:"username,omitempty"`
-		// Interfaces
-		Nsfw           interface{} `json:"nsfw,omitempty"` // API for images can take boolean or string
+		Nsfw           interface{} `json:"nsfw,omitempty"`
 		NsfwLevel      interface{} `json:"nsfwLevel,omitempty"`
-		// Pointer to int
 		PostID         *int        `json:"postId,omitempty"`
-		// Integers
+		URL            string      `json:"url"`
+		Hash           string      `json:"hash"`
+		Username       string      `json:"username,omitempty"`
 		ID             int         `json:"id"`
 		Width          int         `json:"width"`
 		Height         int         `json:"height"`
-		ModelID        int         `json:"modelId,omitempty"`        // Added field
-		ModelVersionID int         `json:"modelVersionId,omitempty"` // Added field
-		// Meta      interface{} `json:"meta,omitempty"` // Usually contains prompt info
+		ModelID        int         `json:"modelId,omitempty"`
+		ModelVersionID int         `json:"modelVersionId,omitempty"`
 	}
 
 	// ImageAPIParameters defines the query parameters specific to the /api/v1/images endpoint.
 	ImageAPIParameters struct {
-		// Strings first  
-		Username       string `json:"username,omitempty"`
-		Sort           string `json:"sort,omitempty"`   // e.g., "Newest", "Most Reactions"
-		Period         string `json:"period,omitempty"` // e.g., "AllTime", "Day"
-		Nsfw           string `json:"nsfw,omitempty"`   // API values: "None", "Soft", "Mature", "X", "true", "false". Empty means omit.
-		Cursor         string `json:"cursor,omitempty"`
+		// Strings first
+		Username string `json:"username,omitempty"`
+		Sort     string `json:"sort,omitempty"`   // e.g., "Newest", "Most Reactions"
+		Period   string `json:"period,omitempty"` // e.g., "AllTime", "Day"
+		Nsfw     string `json:"nsfw,omitempty"`   // API values: "None", "Soft", "Mature", "X", "true", "false". Empty means omit.
+		Cursor   string `json:"cursor,omitempty"`
 		// Integers
-		ModelID        int    `json:"modelId,omitempty"`
-		ModelVersionID int    `json:"modelVersionId,omitempty"`
-		PostID         int    `json:"postId,omitempty"`
-		Limit          int    `json:"limit,omitempty"`  // API default is 100, max 200 for images. 0 could mean API default.
+		ModelID        int `json:"modelId,omitempty"`
+		ModelVersionID int `json:"modelVersionId,omitempty"`
+		PostID         int `json:"postId,omitempty"`
+		Limit          int `json:"limit,omitempty"` // API default is 100, max 200 for images. 0 could mean API default.
 	}
 )
 

@@ -378,261 +378,313 @@ func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
 	if err := readConfigFile(v, &finalCfg); err != nil {
 		return models.Config{}, nil, err
 	}
-	// This log will now reflect either (defaults) or (defaults overridden by file)
+
 	log.Debugf("[Initialize] After attempting file read and unmarshalling. cfg.Download: %+v", finalCfg.Download)
 	log.Debugf("[Initialize] Specifically, after unmarshal: Query='%s', ModelTypes=%v, Limit=%d, Nsfw=%t, Sort='%s', Period='%s'", finalCfg.Download.Query, finalCfg.Download.ModelTypes, finalCfg.Download.Limit, finalCfg.Download.Nsfw, finalCfg.Download.Sort, finalCfg.Download.Period)
 
-	// --- Override with CLI Flags ---
+	// --- 3. Override with CLI Flags ---
 	log.Debugf("[Initialize] About to override with CLI flags. Current cfg.Download (after Viper unmarshal): %+v", finalCfg.Download)
+
+	applyGlobalFlags(&finalCfg, flags)
+	applyDownloadFlags(&finalCfg, flags)
+	applyImagesFlags(&finalCfg, flags)
+	applyTorrentFlags(&finalCfg, flags)
+	applyDBFlags(&finalCfg, flags)
+
+	// --- 4. Derive Default Paths if Empty ---
+	deriveDefaultPaths(&finalCfg)
+
+	// --- 5. Validation ---
+	if err := validateConfig(&finalCfg); err != nil {
+		return models.Config{}, nil, err
+	}
+
+	// --- 6. Setup HTTP Transport ---
+	finalTransport, err := setupHTTPTransport(&finalCfg)
+	if err != nil {
+		return models.Config{}, nil, err
+	}
+
+	log.Debugf("[Initialize] Final merged cfg.Download before returning: %+v", finalCfg.Download)
+	log.Debugf("[Initialize] Specifically, final: Query='%s', ModelTypes=%v, Limit=%d, Nsfw=%t, Sort='%s', Period='%s'", finalCfg.Download.Query, finalCfg.Download.ModelTypes, finalCfg.Download.Limit, finalCfg.Download.Nsfw, finalCfg.Download.Sort, finalCfg.Download.Period)
+
+	if err := performPathPatternValidation(&finalCfg); err != nil {
+		log.Errorf("Path pattern validation failed: %v", err)
+	}
+
+	log.Debug("Configuration initialized successfully.")
+	return finalCfg, finalTransport, nil
+}
+
+// applyGlobalFlags applies global-level CLI flags to the configuration
+func applyGlobalFlags(cfg *models.Config, flags CliFlags) {
 	if flags.APIKey != nil {
 		log.Debugf("[Initialize] Overriding APIKey from flag.")
-		finalCfg.APIKey = *flags.APIKey
+		cfg.APIKey = *flags.APIKey
 	}
 	if flags.SavePath != nil {
 		log.Debugf("[Initialize] Overriding SavePath from flag: '%s'", *flags.SavePath)
-		finalCfg.SavePath = *flags.SavePath
+		cfg.SavePath = *flags.SavePath
 	}
 	if flags.LogApiRequests != nil {
 		log.Debugf("[Initialize] Overriding LogApiRequests from flag: %v", *flags.LogApiRequests)
-		finalCfg.LogApiRequests = *flags.LogApiRequests
+		cfg.LogApiRequests = *flags.LogApiRequests
 	}
 	if flags.APIDelayMs != nil {
 		log.Debugf("[Initialize] Overriding APIDelayMs from flag: %d", *flags.APIDelayMs)
-		finalCfg.APIDelayMs = *flags.APIDelayMs
+		cfg.APIDelayMs = *flags.APIDelayMs
 	}
 	if flags.APIClientTimeoutSec != nil {
 		log.Debugf("[Initialize] Overriding APIClientTimeoutSec from flag: %d", *flags.APIClientTimeoutSec)
-		finalCfg.APIClientTimeoutSec = *flags.APIClientTimeoutSec
+		cfg.APIClientTimeoutSec = *flags.APIClientTimeoutSec
 	}
 	if flags.MaxRetries != nil {
 		log.Debugf("[Initialize] Overriding MaxRetries from flag: %d", *flags.MaxRetries)
-		finalCfg.MaxRetries = *flags.MaxRetries
+		cfg.MaxRetries = *flags.MaxRetries
 	}
 	if flags.InitialRetryDelayMs != nil {
 		log.Debugf("[Initialize] Overriding InitialRetryDelayMs from flag: %d", *flags.InitialRetryDelayMs)
-		finalCfg.InitialRetryDelayMs = *flags.InitialRetryDelayMs
+		cfg.InitialRetryDelayMs = *flags.InitialRetryDelayMs
 	}
 	if flags.LogLevel != nil {
 		log.Debugf("[Initialize] Overriding LogLevel from flag: '%s'", *flags.LogLevel)
-		finalCfg.LogLevel = *flags.LogLevel
+		cfg.LogLevel = *flags.LogLevel
 	}
 	if flags.LogFormat != nil {
 		log.Debugf("[Initialize] Overriding LogFormat from flag: '%s'", *flags.LogFormat)
-		finalCfg.LogFormat = *flags.LogFormat
+		cfg.LogFormat = *flags.LogFormat
+	}
+}
+
+// applyDownloadFlags applies download-specific CLI flags to the configuration
+func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
+	if flags.Download == nil {
+		return
 	}
 
-	// Override Download settings
-	if flags.Download != nil {
-		log.Debugf("[Initialize] Processing Download CLI flags: %+v", *flags.Download)
-		if flags.Download.Concurrency != nil {
-			finalCfg.Download.Concurrency = *flags.Download.Concurrency
-			log.Debugf("[Initialize] CLI Override: Download.Concurrency = %d", finalCfg.Download.Concurrency)
-		}
-		if flags.Download.Tag != nil {
-			finalCfg.Download.Tag = *flags.Download.Tag
-			log.Debugf("[Initialize] CLI Override: Download.Tag = '%s'", finalCfg.Download.Tag)
-		}
-		if flags.Download.Query != nil {
-			finalCfg.Download.Query = *flags.Download.Query
-			log.Debugf("[Initialize] CLI Override: Download.Query = '%s'", finalCfg.Download.Query)
-		}
-		if flags.Download.ModelTypes != nil && len(*flags.Download.ModelTypes) > 0 { // Check if slice is not empty
-			finalCfg.Download.ModelTypes = *flags.Download.ModelTypes
-			log.Debugf("[Initialize] CLI Override: Download.ModelTypes = %v", finalCfg.Download.ModelTypes)
-		}
-		if flags.Download.BaseModels != nil && len(*flags.Download.BaseModels) > 0 { // Check if slice is not empty
-			finalCfg.Download.BaseModels = *flags.Download.BaseModels
-			log.Debugf("[Initialize] CLI Override: Download.BaseModels = %v", finalCfg.Download.BaseModels)
-		}
-		if flags.Download.Username != nil {
-			// API expects single username, config stores list. Flag provides single.
-			// For consistency, if flag is set, it becomes the first (and only relevant for API) username.
-			finalCfg.Download.Usernames = []string{*flags.Download.Username}
-			log.Debugf("[Initialize] CLI Override: Download.Usernames = %v (from single username flag)", finalCfg.Download.Usernames)
-		}
-		if flags.Download.Nsfw != nil {
-			finalCfg.Download.Nsfw = *flags.Download.Nsfw
-			log.Debugf("[Initialize] CLI Override: Download.Nsfw = %t", finalCfg.Download.Nsfw)
-		}
-		if flags.Download.Limit != nil {
-			finalCfg.Download.Limit = *flags.Download.Limit
-			log.Debugf("[Initialize] CLI Override: Download.Limit = %d", finalCfg.Download.Limit)
-		}
-		if flags.Download.MaxPages != nil {
-			finalCfg.Download.MaxPages = *flags.Download.MaxPages
-			log.Debugf("[Initialize] CLI Override: Download.MaxPages = %d", finalCfg.Download.MaxPages)
-		}
-		if flags.Download.Sort != nil {
-			finalCfg.Download.Sort = *flags.Download.Sort
-			log.Debugf("[Initialize] CLI Override: Download.Sort = '%s'", finalCfg.Download.Sort)
-		}
-		if flags.Download.Period != nil {
-			finalCfg.Download.Period = *flags.Download.Period
-			log.Debugf("[Initialize] CLI Override: Download.Period = '%s'", finalCfg.Download.Period)
-		}
-		if flags.Download.ModelID != nil {
-			finalCfg.Download.ModelID = *flags.Download.ModelID
-			log.Debugf("[Initialize] CLI Override: Download.ModelID = %d", finalCfg.Download.ModelID)
-		}
-		if flags.Download.ModelVersionID != nil {
-			finalCfg.Download.ModelVersionID = *flags.Download.ModelVersionID
-			log.Debugf("[Initialize] CLI Override: Download.ModelVersionID = %d", finalCfg.Download.ModelVersionID)
-		}
-		if flags.Download.PrimaryOnly != nil {
-			finalCfg.Download.PrimaryOnly = *flags.Download.PrimaryOnly
-			log.Debugf("[Initialize] CLI Override: Download.PrimaryOnly = %t", finalCfg.Download.PrimaryOnly)
-		}
-		if flags.Download.Pruned != nil {
-			finalCfg.Download.Pruned = *flags.Download.Pruned
-			log.Debugf("[Initialize] CLI Override: Download.Pruned = %t", finalCfg.Download.Pruned)
-		}
-		if flags.Download.Fp16 != nil {
-			finalCfg.Download.Fp16 = *flags.Download.Fp16
-			log.Debugf("[Initialize] CLI Override: Download.Fp16 = %t", finalCfg.Download.Fp16)
-		}
-		if flags.Download.AllVersions != nil {
-			finalCfg.Download.AllVersions = *flags.Download.AllVersions
-			log.Debugf("[Initialize] CLI Override: Download.AllVersions = %t", finalCfg.Download.AllVersions)
-		}
-		if flags.Download.IgnoreBaseModels != nil {
-			finalCfg.Download.IgnoreBaseModels = *flags.Download.IgnoreBaseModels
-			log.Debugf("[Initialize] CLI Override: Download.IgnoreBaseModels = %v", finalCfg.Download.IgnoreBaseModels)
-		}
-		if flags.Download.IgnoreFileNameStrings != nil {
-			finalCfg.Download.IgnoreFileNameStrings = *flags.Download.IgnoreFileNameStrings
-			log.Debugf("[Initialize] CLI Override: Download.IgnoreFileNameStrings = %v", finalCfg.Download.IgnoreFileNameStrings)
-		}
-		if flags.Download.SkipConfirmation != nil {
-			finalCfg.Download.SkipConfirmation = *flags.Download.SkipConfirmation
-			log.Debugf("[Initialize] CLI Override: Download.SkipConfirmation = %t", finalCfg.Download.SkipConfirmation)
-		}
-		if flags.Download.SaveMetadata != nil {
-			finalCfg.Download.SaveMetadata = *flags.Download.SaveMetadata
-			log.Debugf("[Initialize] CLI Override: Download.SaveMetadata = %t", finalCfg.Download.SaveMetadata)
-		}
-		if flags.Download.SaveModelInfo != nil {
-			finalCfg.Download.SaveModelInfo = *flags.Download.SaveModelInfo
-			log.Debugf("[Initialize] CLI Override: Download.SaveModelInfo = %t", finalCfg.Download.SaveModelInfo)
-		}
-		if flags.Download.SaveVersionImages != nil {
-			finalCfg.Download.SaveVersionImages = *flags.Download.SaveVersionImages
-			log.Debugf("[Initialize] CLI Override: Download.SaveVersionImages = %t", finalCfg.Download.SaveVersionImages)
-		}
-		if flags.Download.SaveModelImages != nil {
-			finalCfg.Download.SaveModelImages = *flags.Download.SaveModelImages
-			log.Debugf("[Initialize] CLI Override: Download.SaveModelImages = %t", finalCfg.Download.SaveModelImages)
-		}
-		if flags.Download.DownloadMetaOnly != nil {
-			finalCfg.Download.DownloadMetaOnly = *flags.Download.DownloadMetaOnly
-			log.Debugf("[Initialize] CLI Override: Download.DownloadMetaOnly = %t", finalCfg.Download.DownloadMetaOnly)
-		}
+	log.Debugf("[Initialize] Processing Download CLI flags: %+v", *flags.Download)
+
+	if flags.Download.Concurrency != nil {
+		cfg.Download.Concurrency = *flags.Download.Concurrency
+		log.Debugf("[Initialize] CLI Override: Download.Concurrency = %d", cfg.Download.Concurrency)
+	}
+	if flags.Download.Tag != nil {
+		cfg.Download.Tag = *flags.Download.Tag
+		log.Debugf("[Initialize] CLI Override: Download.Tag = '%s'", cfg.Download.Tag)
+	}
+	if flags.Download.Query != nil {
+		cfg.Download.Query = *flags.Download.Query
+		log.Debugf("[Initialize] CLI Override: Download.Query = '%s'", cfg.Download.Query)
+	}
+	if flags.Download.ModelTypes != nil && len(*flags.Download.ModelTypes) > 0 {
+		cfg.Download.ModelTypes = *flags.Download.ModelTypes
+		log.Debugf("[Initialize] CLI Override: Download.ModelTypes = %v", cfg.Download.ModelTypes)
+	}
+	if flags.Download.BaseModels != nil && len(*flags.Download.BaseModels) > 0 {
+		cfg.Download.BaseModels = *flags.Download.BaseModels
+		log.Debugf("[Initialize] CLI Override: Download.BaseModels = %v", cfg.Download.BaseModels)
+	}
+	if flags.Download.Username != nil {
+		cfg.Download.Usernames = []string{*flags.Download.Username}
+		log.Debugf("[Initialize] CLI Override: Download.Usernames = %v (from single username flag)", cfg.Download.Usernames)
+	}
+	if flags.Download.Nsfw != nil {
+		cfg.Download.Nsfw = *flags.Download.Nsfw
+		log.Debugf("[Initialize] CLI Override: Download.Nsfw = %t", cfg.Download.Nsfw)
+	}
+	if flags.Download.Limit != nil {
+		cfg.Download.Limit = *flags.Download.Limit
+		log.Debugf("[Initialize] CLI Override: Download.Limit = %d", cfg.Download.Limit)
+	}
+	if flags.Download.MaxPages != nil {
+		cfg.Download.MaxPages = *flags.Download.MaxPages
+		log.Debugf("[Initialize] CLI Override: Download.MaxPages = %d", cfg.Download.MaxPages)
+	}
+	if flags.Download.Sort != nil {
+		cfg.Download.Sort = *flags.Download.Sort
+		log.Debugf("[Initialize] CLI Override: Download.Sort = '%s'", cfg.Download.Sort)
+	}
+	if flags.Download.Period != nil {
+		cfg.Download.Period = *flags.Download.Period
+		log.Debugf("[Initialize] CLI Override: Download.Period = '%s'", cfg.Download.Period)
+	}
+	if flags.Download.ModelID != nil {
+		cfg.Download.ModelID = *flags.Download.ModelID
+		log.Debugf("[Initialize] CLI Override: Download.ModelID = %d", cfg.Download.ModelID)
+	}
+	if flags.Download.ModelVersionID != nil {
+		cfg.Download.ModelVersionID = *flags.Download.ModelVersionID
+		log.Debugf("[Initialize] CLI Override: Download.ModelVersionID = %d", cfg.Download.ModelVersionID)
+	}
+	if flags.Download.PrimaryOnly != nil {
+		cfg.Download.PrimaryOnly = *flags.Download.PrimaryOnly
+		log.Debugf("[Initialize] CLI Override: Download.PrimaryOnly = %t", cfg.Download.PrimaryOnly)
+	}
+	if flags.Download.Pruned != nil {
+		cfg.Download.Pruned = *flags.Download.Pruned
+		log.Debugf("[Initialize] CLI Override: Download.Pruned = %t", cfg.Download.Pruned)
+	}
+	if flags.Download.Fp16 != nil {
+		cfg.Download.Fp16 = *flags.Download.Fp16
+		log.Debugf("[Initialize] CLI Override: Download.Fp16 = %t", cfg.Download.Fp16)
+	}
+	if flags.Download.AllVersions != nil {
+		cfg.Download.AllVersions = *flags.Download.AllVersions
+		log.Debugf("[Initialize] CLI Override: Download.AllVersions = %t", cfg.Download.AllVersions)
+	}
+	if flags.Download.IgnoreBaseModels != nil {
+		cfg.Download.IgnoreBaseModels = *flags.Download.IgnoreBaseModels
+		log.Debugf("[Initialize] CLI Override: Download.IgnoreBaseModels = %v", cfg.Download.IgnoreBaseModels)
+	}
+	if flags.Download.IgnoreFileNameStrings != nil {
+		cfg.Download.IgnoreFileNameStrings = *flags.Download.IgnoreFileNameStrings
+		log.Debugf("[Initialize] CLI Override: Download.IgnoreFileNameStrings = %v", cfg.Download.IgnoreFileNameStrings)
+	}
+	if flags.Download.SkipConfirmation != nil {
+		cfg.Download.SkipConfirmation = *flags.Download.SkipConfirmation
+		log.Debugf("[Initialize] CLI Override: Download.SkipConfirmation = %t", cfg.Download.SkipConfirmation)
+	}
+	if flags.Download.SaveMetadata != nil {
+		cfg.Download.SaveMetadata = *flags.Download.SaveMetadata
+		log.Debugf("[Initialize] CLI Override: Download.SaveMetadata = %t", cfg.Download.SaveMetadata)
+	}
+	if flags.Download.SaveModelInfo != nil {
+		cfg.Download.SaveModelInfo = *flags.Download.SaveModelInfo
+		log.Debugf("[Initialize] CLI Override: Download.SaveModelInfo = %t", cfg.Download.SaveModelInfo)
+	}
+	if flags.Download.SaveVersionImages != nil {
+		cfg.Download.SaveVersionImages = *flags.Download.SaveVersionImages
+		log.Debugf("[Initialize] CLI Override: Download.SaveVersionImages = %t", cfg.Download.SaveVersionImages)
+	}
+	if flags.Download.SaveModelImages != nil {
+		cfg.Download.SaveModelImages = *flags.Download.SaveModelImages
+		log.Debugf("[Initialize] CLI Override: Download.SaveModelImages = %t", cfg.Download.SaveModelImages)
+	}
+	if flags.Download.DownloadMetaOnly != nil {
+		cfg.Download.DownloadMetaOnly = *flags.Download.DownloadMetaOnly
+		log.Debugf("[Initialize] CLI Override: Download.DownloadMetaOnly = %t", cfg.Download.DownloadMetaOnly)
+	}
+}
+
+// applyImagesFlags applies images-specific CLI flags to the configuration
+func applyImagesFlags(cfg *models.Config, flags CliFlags) {
+	if flags.Images == nil {
+		return
 	}
 
-	// Apply nested Images flags directly
-	if flags.Images != nil {
-		log.Debug("[Config Init] Applying Images flags...")
-		if flags.Images.Limit != nil {
-			finalCfg.Images.Limit = *flags.Images.Limit
-		}
-		if flags.Images.PostID != nil {
-			finalCfg.Images.PostID = *flags.Images.PostID
-		}
-		if flags.Images.ModelID != nil {
-			finalCfg.Images.ModelID = *flags.Images.ModelID
-		}
-		if flags.Images.ModelVersionID != nil {
-			finalCfg.Images.ModelVersionID = *flags.Images.ModelVersionID
-		}
-		if flags.Images.Username != nil {
-			finalCfg.Images.Username = *flags.Images.Username
-		}
-		// Note: flags.Images.Nsfw is *string, models.ImagesConfig.Nsfw is bool. Conversion needed if used.
-		if flags.Images.Nsfw != nil {
-			log.Warnf("[Config Init] Skipping Images.Nsfw flag override due to type mismatch (string vs bool). Flag value: %s", *flags.Images.Nsfw)
-		}
-		if flags.Images.Sort != nil {
-			finalCfg.Images.Sort = *flags.Images.Sort
-		}
-		if flags.Images.Period != nil {
-			finalCfg.Images.Period = *flags.Images.Period
-		}
-		if flags.Images.Page != nil {
-			finalCfg.Images.Page = *flags.Images.Page
-		}
-		// Note: flags.Images.MaxPages ignored (no config field)
-		if flags.Images.MaxPages != nil {
-			log.Warnf("[Config Init] Images flag --max-pages ignored, no corresponding config field.")
-		}
-		if flags.Images.OutputDir != nil {
-			finalCfg.Images.OutputDir = *flags.Images.OutputDir
-		}
-		if flags.Images.Concurrency != nil {
-			finalCfg.Images.Concurrency = *flags.Images.Concurrency
-		}
-		if flags.Images.SaveMetadata != nil {
-			finalCfg.Images.SaveMetadata = *flags.Images.SaveMetadata
-		}
+	log.Debug("[Config Init] Applying Images flags...")
+
+	if flags.Images.Limit != nil {
+		cfg.Images.Limit = *flags.Images.Limit
+	}
+	if flags.Images.PostID != nil {
+		cfg.Images.PostID = *flags.Images.PostID
+	}
+	if flags.Images.ModelID != nil {
+		cfg.Images.ModelID = *flags.Images.ModelID
+	}
+	if flags.Images.ModelVersionID != nil {
+		cfg.Images.ModelVersionID = *flags.Images.ModelVersionID
+	}
+	if flags.Images.Username != nil {
+		cfg.Images.Username = *flags.Images.Username
+	}
+	if flags.Images.Nsfw != nil {
+		log.Warnf("[Config Init] Skipping Images.Nsfw flag override due to type mismatch (string vs bool). Flag value: %s", *flags.Images.Nsfw)
+	}
+	if flags.Images.Sort != nil {
+		cfg.Images.Sort = *flags.Images.Sort
+	}
+	if flags.Images.Period != nil {
+		cfg.Images.Period = *flags.Images.Period
+	}
+	if flags.Images.Page != nil {
+		cfg.Images.Page = *flags.Images.Page
+	}
+	if flags.Images.MaxPages != nil {
+		log.Warnf("[Config Init] Images flag --max-pages ignored, no corresponding config field.")
+	}
+	if flags.Images.OutputDir != nil {
+		cfg.Images.OutputDir = *flags.Images.OutputDir
+	}
+	if flags.Images.Concurrency != nil {
+		cfg.Images.Concurrency = *flags.Images.Concurrency
+	}
+	if flags.Images.SaveMetadata != nil {
+		cfg.Images.SaveMetadata = *flags.Images.SaveMetadata
+	}
+}
+
+// applyTorrentFlags applies torrent-specific CLI flags to the configuration
+func applyTorrentFlags(cfg *models.Config, flags CliFlags) {
+	if flags.Torrent == nil {
+		return
 	}
 
-	// Apply nested Torrent flags directly
-	if flags.Torrent != nil {
-		log.Debug("[Config Init] Applying Torrent flags...")
-		// Note: AnnounceURLs and ModelIDs are flags only, not stored in config struct.
-		if flags.Torrent.OutputDir != nil {
-			finalCfg.Torrent.OutputDir = *flags.Torrent.OutputDir
-		}
-		if flags.Torrent.Overwrite != nil {
-			finalCfg.Torrent.Overwrite = *flags.Torrent.Overwrite
-		}
-		if flags.Torrent.MagnetLinks != nil {
-			finalCfg.Torrent.MagnetLinks = *flags.Torrent.MagnetLinks
-		}
-		if flags.Torrent.Concurrency != nil {
-			finalCfg.Torrent.Concurrency = *flags.Torrent.Concurrency
-		}
+	log.Debug("[Config Init] Applying Torrent flags...")
+
+	if flags.Torrent.OutputDir != nil {
+		cfg.Torrent.OutputDir = *flags.Torrent.OutputDir
+	}
+	if flags.Torrent.Overwrite != nil {
+		cfg.Torrent.Overwrite = *flags.Torrent.Overwrite
+	}
+	if flags.Torrent.MagnetLinks != nil {
+		cfg.Torrent.MagnetLinks = *flags.Torrent.MagnetLinks
+	}
+	if flags.Torrent.Concurrency != nil {
+		cfg.Torrent.Concurrency = *flags.Torrent.Concurrency
+	}
+}
+
+// applyDBFlags applies database-specific CLI flags to the configuration
+func applyDBFlags(cfg *models.Config, flags CliFlags) {
+	if flags.DB == nil || flags.DB.Verify == nil {
+		return
 	}
 
-	// Apply nested DB flags directly
-	if flags.DB != nil && flags.DB.Verify != nil {
-		log.Debug("[Config Init] Applying DB Verify flags...")
-		if flags.DB.Verify.CheckHash != nil {
-			finalCfg.DB.Verify.CheckHash = *flags.DB.Verify.CheckHash
-		}
-		if flags.DB.Verify.AutoRedownload != nil {
-			finalCfg.DB.Verify.AutoRedownload = *flags.DB.Verify.AutoRedownload
-		}
-	}
+	log.Debug("[Config Init] Applying DB Verify flags...")
 
-	// --- 4. Derive Default Paths if Empty ---
-	// Default paths only if they are empty OR if they were previously defaulted based on the save path *before* flag overrides.
-	defaultDbPath := filepath.Join(finalCfg.SavePath, "civitai.db")
-	if finalCfg.DatabasePath == "" || finalCfg.DatabasePath == defaultDbPath {
-		finalCfg.DatabasePath = filepath.Join(finalCfg.SavePath, "civitai.db") // Use final (potentially overridden) SavePath
-		log.Debugf("[Config Init] DatabasePath defaulted based on final SavePath: %s", finalCfg.DatabasePath)
+	if flags.DB.Verify.CheckHash != nil {
+		cfg.DB.Verify.CheckHash = *flags.DB.Verify.CheckHash
+	}
+	if flags.DB.Verify.AutoRedownload != nil {
+		cfg.DB.Verify.AutoRedownload = *flags.DB.Verify.AutoRedownload
+	}
+}
+
+// deriveDefaultPaths derives default paths based on the SavePath
+func deriveDefaultPaths(cfg *models.Config) {
+	defaultDbPath := filepath.Join(cfg.SavePath, "civitai.db")
+	if cfg.DatabasePath == "" || cfg.DatabasePath == defaultDbPath {
+		cfg.DatabasePath = filepath.Join(cfg.SavePath, "civitai.db")
+		log.Debugf("[Config Init] DatabasePath defaulted based on final SavePath: %s", cfg.DatabasePath)
 	} else {
-		log.Debugf("[Config Init] DatabasePath ('%s') was explicitly set or derived from a non-default SavePath, not changing.", finalCfg.DatabasePath)
+		log.Debugf("[Config Init] DatabasePath ('%s') was explicitly set or derived from a non-default SavePath, not changing.", cfg.DatabasePath)
 	}
+}
 
-	// --- 5. Validation ---
-	if finalCfg.SavePath == "" {
-		return models.Config{}, nil, fmt.Errorf("SavePath cannot be empty (set via --save-path flag or SavePath in config)")
+// validateConfig validates the final configuration
+func validateConfig(cfg *models.Config) error {
+	if cfg.SavePath == "" {
+		return fmt.Errorf("SavePath cannot be empty (set via --save-path flag or SavePath in config)")
 	}
-	// DatabasePath is derived, so should not be empty here.
-	// Add more validation as needed (e.g., for API key if required by command)
+	return nil
+}
 
-	// --- 6. Setup HTTP Transport ---
+// setupHTTPTransport sets up the HTTP transport with optional logging
+func setupHTTPTransport(cfg *models.Config) (http.RoundTripper, error) {
 	baseTransport := http.DefaultTransport
 	var finalTransport http.RoundTripper = baseTransport
 
-	if finalCfg.LogApiRequests {
+	if cfg.LogApiRequests {
 		log.Debug("API request logging enabled.")
-		logFilePath := "api.log" // Default filename
-		if finalCfg.SavePath != "" {
-			// Ensure SavePath exists before trying to join
-			if _, statErr := os.Stat(finalCfg.SavePath); statErr == nil {
-				logFilePath = filepath.Join(finalCfg.SavePath, logFilePath)
+		logFilePath := "api.log"
+		if cfg.SavePath != "" {
+			if _, statErr := os.Stat(cfg.SavePath); statErr == nil {
+				logFilePath = filepath.Join(cfg.SavePath, logFilePath)
 			} else {
-				log.Warnf("SavePath '%s' not found, saving api.log to current directory.", finalCfg.SavePath)
+				log.Warnf("SavePath '%s' not found, saving api.log to current directory.", cfg.SavePath)
 			}
 		} else {
 			log.Warnf("SavePath is empty, saving api.log to current directory.")
@@ -642,26 +694,12 @@ func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
 		loggingTransport, err := api.NewLoggingTransport(baseTransport, logFilePath)
 		if err != nil {
 			log.WithError(err).Error("Failed to initialize API logging transport, logging disabled.")
-			// Keep finalTransport as baseTransport
 		} else {
-			finalTransport = loggingTransport // Use the wrapped transport
+			finalTransport = loggingTransport
 		}
 	}
 
-	log.Debugf("[Initialize] Final merged cfg.Download before returning: %+v", finalCfg.Download)
-	log.Debugf("[Initialize] Specifically, final: Query='%s', ModelTypes=%v, Limit=%d, Nsfw=%t, Sort='%s', Period='%s'", finalCfg.Download.Query, finalCfg.Download.ModelTypes, finalCfg.Download.Limit, finalCfg.Download.Nsfw, finalCfg.Download.Sort, finalCfg.Download.Period)
-
-	if err := performPathPatternValidation(&finalCfg); err != nil {
-		// Log the error and potentially return it, or handle it as a fatal error
-		// For now, we'll log it and continue, but in a stricter setup, you might exit.
-		log.Errorf("Path pattern validation failed: %v", err)
-		// Depending on desired behavior, you might want to:
-		// return nil, nil, fmt.Errorf("path pattern validation failed: %w", err)
-		// or log.Fatalf("Path pattern validation failed: %v", err)
-	}
-
-	log.Debug("Configuration initialized successfully.")
-	return finalCfg, finalTransport, nil
+	return finalTransport, nil
 }
 
 // --- Path Pattern Validation --- START ---

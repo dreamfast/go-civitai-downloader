@@ -156,9 +156,9 @@ func runDbView(cmd *cobra.Command, args []string) {
 }
 
 type verificationProblem struct {
-	Entry  models.DatabaseEntry
-	Reason string // e.g., "Missing", "Hash Mismatch"
+	Reason string
 	DbKey  string
+	Entry  models.DatabaseEntry
 }
 
 func runDbVerify(cmd *cobra.Command, args []string) {

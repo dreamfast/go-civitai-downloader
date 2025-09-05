@@ -22,9 +22,9 @@ type imageJob struct {
 	// String first
 	SourceURL string
 	// Struct
-	Metadata  models.ImageApiItem // The full metadata from the images API
+	Metadata models.ImageApiItem // The full metadata from the images API
 	// Integer
-	ImageID   int
+	ImageID int
 }
 
 // imageDownloadWorker is responsible for fetching full model details for an image,

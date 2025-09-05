@@ -25,7 +25,7 @@ type imageDownloadJob struct {
 	TargetPath  string
 	LogFilename string // Keep base filename for logging
 	// Integer
-	ImageID     int    // Keep ID for logging
+	ImageID int // Keep ID for logging
 }
 
 // --- Structs for Concurrent Image Downloads --- END ---

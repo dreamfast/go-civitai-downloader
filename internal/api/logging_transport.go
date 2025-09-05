@@ -27,8 +27,8 @@ var (
 type LoggingTransport struct {
 	Transport http.RoundTripper
 	logFile   *os.File
-	mu        sync.Mutex
 	writer    *bufio.Writer
+	mu        sync.Mutex
 }
 
 // NewLoggingTransport creates a new LoggingTransport.

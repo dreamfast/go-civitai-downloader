@@ -31,7 +31,7 @@ type Client struct {
 	// Pointer first
 	HttpClient *http.Client // Use a shared client
 	// String
-	ApiKey     string
+	ApiKey string
 }
 
 // NewClient creates a new API client
