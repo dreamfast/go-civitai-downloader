@@ -269,11 +269,9 @@ type CliCleanFlags struct { // Flags only
 	Magnets  *bool // -m
 }
 
-// Initialize loads configuration based on defaults, config file, and flags.
-// Precedence: Flags > Config File > Defaults.
-func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
-	// --- 1. Establish Defaults ---
-	finalCfg := models.Config{
+// initializeDefaults creates a Config with sensible default values
+func initializeDefaults() models.Config {
+	return models.Config{
 		// Set sensible defaults for all fields in models.Config
 		SavePath:            "downloads",
 		DatabasePath:        "", // Default derived from SavePath later
@@ -318,10 +316,10 @@ func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
 			},
 		},
 	}
+}
 
-	log.Debugf("[Initialize] Applying default values. Current cfg.Download: %+v", finalCfg.Download)
-
-	// Initialize Viper
+// setupViper initializes Viper with environment variable settings and defaults
+func setupViper(flags CliFlags) *viper.Viper {
 	v := viper.New()
 	v.SetEnvPrefix("CIVITAI")
 	v.AutomaticEnv()
@@ -329,35 +327,56 @@ func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
 
 	// Set defaults using Viper as well, so they are part of the hierarchy
 	setViperDefaults(v)
-	log.Debugf("[Initialize] Viper defaults set. cfg.Download after Viper defaults (should be same as above): %+v", finalCfg.Download) // Should be same as initial defaults
+	log.Debugf("[setupViper] Viper defaults set")
 
 	// Determine config file path
 	actualConfigFilePath := DefaultConfigFilePath
 	if flags.ConfigFilePath != nil {
 		actualConfigFilePath = *flags.ConfigFilePath
-		log.Debugf("[Initialize] Using config file path from CLI flag: %s", actualConfigFilePath)
+		log.Debugf("[setupViper] Using config file path from CLI flag: %s", actualConfigFilePath)
 	} else {
-		log.Debugf("[Initialize] Using default config file path: %s", actualConfigFilePath)
+		log.Debugf("[setupViper] Using default config file path: %s", actualConfigFilePath)
 	}
 	v.SetConfigFile(actualConfigFilePath)
+	return v
+}
 
+// readConfigFile reads the configuration file and unmarshals it into the provided config
+func readConfigFile(v *viper.Viper, finalCfg *models.Config) error {
 	// Attempt to read the config file
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Warnf("[Initialize] Config file '%s' not found. Using defaults and CLI flags only.", actualConfigFilePath)
+			log.Warnf("[readConfigFile] Config file not found. Using defaults and CLI flags only.")
 		} else {
-			log.Warnf("[Initialize] Error reading config file '%s': %v. Using defaults and CLI flags only.", actualConfigFilePath, err)
+			log.Warnf("[readConfigFile] Error reading config file: %v. Using defaults and CLI flags only.", err)
 		}
 		// Even if file read fails, proceed to unmarshal. Viper will use defaults for missing keys/file.
 	} else {
-		log.Infof("[Initialize] Successfully read config file: %s", v.ConfigFileUsed())
+		log.Infof("[readConfigFile] Successfully read config file: %s", v.ConfigFileUsed())
 	}
 
 	// Unmarshal Viper data (defaults + file if read) into the config struct.
 	// This MUST happen regardless of whether ReadInConfig succeeded or not, to apply Viper's defaults.
-	if err := v.Unmarshal(&finalCfg); err != nil {
-		log.Errorf("[Initialize] Failed to unmarshal config from Viper: %v", err)
-		return models.Config{}, nil, fmt.Errorf("failed to unmarshal config from viper: %w", err)
+	if err := v.Unmarshal(finalCfg); err != nil {
+		log.Errorf("[readConfigFile] Failed to unmarshal config from Viper: %v", err)
+		return fmt.Errorf("failed to unmarshal config from viper: %w", err)
+	}
+	log.Debugf("[readConfigFile] After attempting file read and unmarshalling. cfg.Download: %+v", finalCfg.Download)
+	return nil
+}
+
+// Initialize loads configuration based on defaults, config file, and flags.
+// Precedence: Flags > Config File > Defaults.
+func Initialize(flags CliFlags) (models.Config, http.RoundTripper, error) {
+	// --- 1. Establish Defaults ---
+	finalCfg := initializeDefaults()
+
+	log.Debugf("[Initialize] Applying default values. Current cfg.Download: %+v", finalCfg.Download)
+
+	// --- 2. Setup and read configuration file ---
+	v := setupViper(flags)
+	if err := readConfigFile(v, &finalCfg); err != nil {
+		return models.Config{}, nil, err
 	}
 	// This log will now reflect either (defaults) or (defaults overridden by file)
 	log.Debugf("[Initialize] After attempting file read and unmarshalling. cfg.Download: %+v", finalCfg.Download)

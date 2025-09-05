@@ -165,11 +165,13 @@ type (
 
 	// --- NEW: Struct for nested 'model' field in /model-versions/{id} response ---
 	BaseModelInfo struct {
+		// Strings first
 		Name string `json:"name"`
 		Type string `json:"type"`
+		Mode string `json:"mode"` // Can be null, "Archived", "TakenDown"
+		// Bools
 		Nsfw bool   `json:"nsfw"`
 		Poi  bool   `json:"poi"`
-		Mode string `json:"mode"` // Can be null, "Archived", "TakenDown"
 	}
 
 	ModelVersion struct {
@@ -262,49 +264,61 @@ type (
 
 	// Added struct for pagination metadata based on API docs
 	PaginationMetadata struct {
+		// Strings first
+		NextPage    string `json:"nextPage"`
+		PrevPage    string `json:"prevPage"`   // Added based on API docs
+		NextCursor  string `json:"nextCursor"` // Added based on API docs (for images endpoint mainly)
+		// Integers
 		TotalItems  int    `json:"totalItems"`
 		CurrentPage int    `json:"currentPage"`
 		PageSize    int    `json:"pageSize"`
 		TotalPages  int    `json:"totalPages"`
-		NextPage    string `json:"nextPage"`
-		PrevPage    string `json:"prevPage"`   // Added based on API docs
-		NextCursor  string `json:"nextCursor"` // Added based on API docs (for images endpoint mainly)
 	}
 
 	// Internal file db entry for each model
 	DatabaseEntry struct {
-		ModelID      int          `json:"modelId"`
+		// Strings first
 		ModelName    string       `json:"modelName"`
 		ModelType    string       `json:"modelType"`
-		Version      ModelVersion `json:"version"`
-		File         File         `json:"file"`
-		Timestamp    int64        `json:"timestamp"`
-		Creator      Creator      `json:"creator"`
 		Filename     string       `json:"filename"`
 		Folder       string       `json:"folder"`
 		Status       string       `json:"status"`
 		ErrorDetails string       `json:"errorDetails,omitempty"`
+		// Structs
+		Version      ModelVersion `json:"version"`
+		File         File         `json:"file"`
+		Creator      Creator      `json:"creator"`
+		// 64-bit integers  
+		Timestamp    int64        `json:"timestamp"`
+		// 32-bit integers
+		ModelID      int          `json:"modelId"`
 	}
 
 	// --- Start: /api/v1/images Endpoint Structures ---
 
 	// ImageApiResponse represents the structure of the response from the /api/v1/images endpoint.
 	ImageApiResponse struct {
-		Items    []ImageApiItem     `json:"items"` // Renamed Image -> ImageApiItem to avoid conflict
+		// Slices first
+		Items    []ImageApiItem     `json:"items"` // Renamed Image -> ImageApiItem to avoid conflict  
+		// Structs
 		Metadata PaginationMetadata `json:"metadata"`
 	}
 
 	// ImageApiItem represents a single image item specifically from the /api/v1/images response.
 	ImageApiItem struct {
-		ID             int         `json:"id"`
+		// Strings first
 		URL            string      `json:"url"`
 		Hash           string      `json:"hash"` // Blurhash
-		Width          int         `json:"width"`
-		Height         int         `json:"height"`
+		Username       string      `json:"username,omitempty"`
+		// Interfaces
 		Nsfw           interface{} `json:"nsfw,omitempty"` // API for images can take boolean or string
 		NsfwLevel      interface{} `json:"nsfwLevel,omitempty"`
-		Username       string      `json:"username,omitempty"`
+		// Pointer to int
 		PostID         *int        `json:"postId,omitempty"`
+		// Integers
+		ID             int         `json:"id"`
+		Width          int         `json:"width"`
+		Height         int         `json:"height"`
 		ModelID        int         `json:"modelId,omitempty"`        // Added field
 		ModelVersionID int         `json:"modelVersionId,omitempty"` // Added field
 		// Meta      interface{} `json:"meta,omitempty"` // Usually contains prompt info
@@ -312,15 +326,17 @@ type (
 
 	// ImageAPIParameters defines the query parameters specific to the /api/v1/images endpoint.
 	ImageAPIParameters struct {
-		ModelID        int    `json:"modelId,omitempty"`
-		ModelVersionID int    `json:"modelVersionId,omitempty"`
-		PostID         int    `json:"postId,omitempty"`
+		// Strings first  
 		Username       string `json:"username,omitempty"`
-		Limit          int    `json:"limit,omitempty"`  // API default is 100, max 200 for images. 0 could mean API default.
 		Sort           string `json:"sort,omitempty"`   // e.g., "Newest", "Most Reactions"
 		Period         string `json:"period,omitempty"` // e.g., "AllTime", "Day"
 		Nsfw           string `json:"nsfw,omitempty"`   // API values: "None", "Soft", "Mature", "X", "true", "false". Empty means omit.
 		Cursor         string `json:"cursor,omitempty"`
+		// Integers
+		ModelID        int    `json:"modelId,omitempty"`
+		ModelVersionID int    `json:"modelVersionId,omitempty"`
+		PostID         int    `json:"postId,omitempty"`
+		Limit          int    `json:"limit,omitempty"`  // API default is 100, max 200 for images. 0 could mean API default.
 	}
 )
 

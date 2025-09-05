@@ -19,9 +19,12 @@ import (
 
 // imageJob defines the data needed to process a single image download.
 type imageJob struct {
-	ImageID   int
+	// String first
 	SourceURL string
+	// Struct
 	Metadata  models.ImageApiItem // The full metadata from the images API
+	// Integer
+	ImageID   int
 }
 
 // imageDownloadWorker is responsible for fetching full model details for an image,

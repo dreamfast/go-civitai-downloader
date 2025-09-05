@@ -28,8 +28,10 @@ const CivitaiApiBaseUrl = "https://civitai.com/api/v1"
 
 // Client struct for interacting with the Civitai API
 type Client struct {
-	ApiKey     string
+	// Pointer first
 	HttpClient *http.Client // Use a shared client
+	// String
+	ApiKey     string
 }
 
 // NewClient creates a new API client

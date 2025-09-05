@@ -20,10 +20,12 @@ import (
 
 // --- Structs for Concurrent Image Downloads --- START ---
 type imageDownloadJob struct {
+	// Strings first
 	SourceURL   string
 	TargetPath  string
-	ImageID     int    // Keep ID for logging
 	LogFilename string // Keep base filename for logging
+	// Integer
+	ImageID     int    // Keep ID for logging
 }
 
 // --- Structs for Concurrent Image Downloads --- END ---

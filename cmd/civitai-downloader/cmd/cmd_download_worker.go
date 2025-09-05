@@ -178,15 +178,18 @@ func handleModelImages(logPrefix string, pd potentialDownload, finalPath string,
 
 // WorkerContext holds the context for a download worker
 type WorkerContext struct {
-	ID              int
+	// String first
 	LogPrefix       string
-	ProcessedCount  int
-	TotalJobs       int
+	// Pointers
 	DB              *database.DB
 	FileDownloader  *downloader.Downloader
 	ImageDownloader *downloader.Downloader
 	Writer          *uilive.Writer
 	Config          *models.Config
+	// Integers
+	ID              int
+	ProcessedCount  int
+	TotalJobs       int
 }
 
 // checkInitialDBStatus checks and returns the initial database status for a job
