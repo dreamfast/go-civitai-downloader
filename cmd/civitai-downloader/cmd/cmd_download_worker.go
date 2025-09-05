@@ -178,15 +178,15 @@ func handleModelImages(logPrefix string, pd potentialDownload, finalPath string,
 
 // WorkerContext holds the context for a download worker
 type WorkerContext struct {
-	ID                int
-	LogPrefix         string
-	ProcessedCount    int
-	TotalJobs         int
-	DB                *database.DB
-	FileDownloader    *downloader.Downloader
-	ImageDownloader   *downloader.Downloader
-	Writer            *uilive.Writer
-	Config            *models.Config
+	ID              int
+	LogPrefix       string
+	ProcessedCount  int
+	TotalJobs       int
+	DB              *database.DB
+	FileDownloader  *downloader.Downloader
+	ImageDownloader *downloader.Downloader
+	Writer          *uilive.Writer
+	Config          *models.Config
 }
 
 // checkInitialDBStatus checks and returns the initial database status for a job
@@ -219,7 +219,7 @@ func (ctx *WorkerContext) checkInitialDBStatus(dbKey string, targetFilepath stri
 func (ctx *WorkerContext) ensureDirectory(directoryPath, dbKey string, errGet error) error {
 	if err := os.MkdirAll(directoryPath, 0750); err != nil {
 		log.WithError(err).Errorf("Worker %d: Failed to create directory %s", ctx.ID, directoryPath)
-		
+
 		updateErr := updateDbEntry(ctx.DB, dbKey, models.StatusError, func(entry *models.DatabaseEntry) {
 			if errors.Is(errGet, database.ErrNotFound) || errGet != nil {
 				entry.ErrorDetails = fmt.Sprintf("Failed to create directory: %v", err)
@@ -325,7 +325,7 @@ func (ctx *WorkerContext) handleVersionImages(pd potentialDownload, finalPath, f
 func (ctx *WorkerContext) processJob(job downloadJob) {
 	pd := job.PotentialDownload
 	dbKey := job.DatabaseKey
-	
+
 	log.Infof("[%s] Processing job for %s (DB Key: %s)", ctx.LogPrefix, pd.TargetFilepath, dbKey)
 	fmt.Fprintf(ctx.Writer, "[%s] Preparing %s... (%d/%d)\n", ctx.LogPrefix, filepath.Base(pd.TargetFilepath), ctx.ProcessedCount+1, ctx.TotalJobs)
 
@@ -365,7 +365,7 @@ func (ctx *WorkerContext) processJob(job downloadJob) {
 // downloadWorker handles the actual download of files and updates the database.
 func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownloader *downloader.Downloader, imageDownloader *downloader.Downloader, wg *sync.WaitGroup, writer *uilive.Writer, totalJobs int, cfg *models.Config) {
 	defer wg.Done()
-	
+
 	ctx := &WorkerContext{
 		ID:              id,
 		LogPrefix:       fmt.Sprintf("Worker-%d", id),
@@ -383,7 +383,7 @@ func downloadWorker(id int, jobs <-chan downloadJob, db *database.DB, fileDownlo
 	for job := range jobs {
 		ctx.processJob(job)
 	}
-	
+
 	log.Debugf("[%s] Exiting", ctx.LogPrefix)
 }
 

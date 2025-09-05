@@ -21,8 +21,8 @@ import (
 
 // --- Package Level Variables for Download Flags --- (Moved from init)
 var (
-	downloadConcurrencyFlag int
-	downloadTagFlag         string
+	downloadConcurrencyFlag           int
+	downloadTagFlag                   string
 	downloadQueryFlag                 string
 	downloadModelTypesFlag            []string
 	downloadBaseModelsFlag            []string

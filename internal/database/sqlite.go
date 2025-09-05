@@ -13,8 +13,8 @@ import (
 
 	"go-civitai-download/internal/models"
 
-	log "github.com/sirupsen/logrus"
 	_ "github.com/mattn/go-sqlite3"
+	log "github.com/sirupsen/logrus"
 )
 
 // ErrNotFound is returned when a key is not found in the database.
@@ -22,7 +22,7 @@ var ErrNotFound = errors.New("key not found")
 
 // DB wraps the SQLite database instance and provides helper methods.
 type DB struct {
-	db        *sql.DB
+	db *sql.DB
 	sync.RWMutex
 	closeOnce sync.Once
 	closed    bool
@@ -51,7 +51,7 @@ func Open(path string) (*DB, error) {
 	}
 
 	dbWrapper := &DB{db: db}
-	
+
 	// Initialize schema
 	if err := dbWrapper.initSchema(); err != nil {
 		db.Close()
@@ -220,44 +220,44 @@ func (d *DB) Close() error {
 // Has checks if a key exists in the database.
 func (d *DB) Has(key []byte) bool {
 	keyStr := string(key)
-	
+
 	if strings.HasPrefix(keyStr, "v_") {
 		versionIDStr := strings.TrimPrefix(keyStr, "v_")
 		versionID, err := strconv.Atoi(versionIDStr)
 		if err != nil {
 			return false
 		}
-		
+
 		d.RLock()
 		defer d.RUnlock()
-		
+
 		var exists bool
 		err = d.db.QueryRow("SELECT EXISTS(SELECT 1 FROM models WHERE version_id = ?)", versionID).Scan(&exists)
 		return err == nil && exists
 	} else if strings.HasPrefix(keyStr, "current_page_") {
 		queryHash := strings.TrimPrefix(keyStr, "current_page_")
-		
+
 		d.RLock()
 		defer d.RUnlock()
-		
+
 		var exists bool
 		err := d.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pagination_state WHERE query_hash = ?)", queryHash).Scan(&exists)
 		return err == nil && exists
 	}
-	
+
 	return false
 }
 
 // Get retrieves the value associated with a key.
 func (d *DB) Get(key []byte) ([]byte, error) {
 	keyStr := string(key)
-	
+
 	if strings.HasPrefix(keyStr, "v_") {
 		return d.getDatabaseEntry(keyStr)
 	} else if strings.HasPrefix(keyStr, "current_page_") {
 		return d.getPageState(keyStr)
 	}
-	
+
 	return nil, ErrNotFound
 }
 
@@ -275,7 +275,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 	// Get main model data
 	var entry models.DatabaseEntry
 	var trainedWordsJSON sql.NullString
-	
+
 	err = d.db.QueryRow(`
 		SELECT 
 			m.version_id, m.model_id, m.model_name, m.model_type, m.version_name,
@@ -296,7 +296,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 		&entry.Version.Stats.DownloadCount, &entry.Version.Stats.FavoriteCount,
 		&entry.Version.Stats.CommentCount, &entry.Version.Stats.RatingCount, &entry.Version.Stats.Rating,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	} else if err != nil {
@@ -316,7 +316,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 			download_url, is_primary, hash_autov2, hash_sha256, hash_crc32, hash_blake3
 		FROM files WHERE version_id = ?
 	`, versionID)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("error querying files for key %s: %w", key, err)
 	}
@@ -325,7 +325,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 	for rows.Next() {
 		var file models.File
 		var metadataFp, metadataSize, metadataFormat sql.NullString
-		
+
 		err := rows.Scan(
 			&file.ID, &file.Name, &file.SizeKB, &file.Type,
 			&metadataFp, &metadataSize, &metadataFormat,
@@ -349,7 +349,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 		}
 
 		entry.Version.Files = append(entry.Version.Files, file)
-		
+
 		// Set the primary file as entry.File for compatibility
 		if file.Primary {
 			entry.File = file
@@ -364,7 +364,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 			stats_comment_count, username
 		FROM model_images WHERE version_id = ?
 	`, versionID)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("error querying images for key %s: %w", key, err)
 	}
@@ -373,7 +373,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 	for imageRows.Next() {
 		var img models.ModelImage
 		var postID sql.NullInt64
-		
+
 		err := imageRows.Scan(
 			&img.ID, &img.URL, &img.Hash, &img.Width, &img.Height, &img.Nsfw, &img.NsfwLevel, &img.CreatedAt, &postID,
 			&img.Stats.CryCount, &img.Stats.LaughCount, &img.Stats.LikeCount, &img.Stats.HeartCount,
@@ -382,7 +382,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error scanning image row for key %s: %w", key, err)
 		}
-		
+
 		if postID.Valid {
 			postIDInt := int(postID.Int64)
 			img.PostID = &postIDInt
@@ -398,32 +398,32 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 // getPageState retrieves pagination state
 func (d *DB) getPageState(key string) ([]byte, error) {
 	queryHash := strings.TrimPrefix(key, "current_page_")
-	
+
 	d.RLock()
 	defer d.RUnlock()
-	
+
 	var currentPage int
 	err := d.db.QueryRow("SELECT current_page FROM pagination_state WHERE query_hash = ?", queryHash).Scan(&currentPage)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	} else if err != nil {
 		return nil, fmt.Errorf("error querying page state for key %s: %w", key, err)
 	}
-	
+
 	return []byte(strconv.Itoa(currentPage)), nil
 }
 
 // Put stores a key-value pair in the database.
 func (d *DB) Put(key []byte, value []byte) error {
 	keyStr := string(key)
-	
+
 	if strings.HasPrefix(keyStr, "v_") {
 		return d.putDatabaseEntry(keyStr, value)
 	} else if strings.HasPrefix(keyStr, "current_page_") {
 		return d.putPageState(keyStr, value)
 	}
-	
+
 	return fmt.Errorf("unsupported key format: %s", keyStr)
 }
 
@@ -460,7 +460,7 @@ func (d *DB) putDatabaseEntry(key string, value []byte) error {
 		string(trainedWordsJSON), entry.Version.BaseModel, entry.Version.EarlyAccessTimeFrame,
 		entry.Creator.Username, entry.Creator.Image, entry.Filename, entry.Folder,
 		entry.Status, entry.ErrorDetails, entry.Timestamp)
-	
+
 	if err != nil {
 		return fmt.Errorf("error inserting model for key %s: %w", key, err)
 	}
@@ -472,7 +472,7 @@ func (d *DB) putDatabaseEntry(key string, value []byte) error {
 		) VALUES (?, ?, ?, ?, ?, ?)
 	`, entry.Version.ID, entry.Version.Stats.DownloadCount, entry.Version.Stats.FavoriteCount,
 		entry.Version.Stats.CommentCount, entry.Version.Stats.RatingCount, entry.Version.Stats.Rating)
-	
+
 	if err != nil {
 		return fmt.Errorf("error inserting stats for key %s: %w", key, err)
 	}
@@ -482,7 +482,7 @@ func (d *DB) putDatabaseEntry(key string, value []byte) error {
 	if err != nil {
 		return fmt.Errorf("error deleting existing files for key %s: %w", key, err)
 	}
-	
+
 	_, err = tx.Exec("DELETE FROM model_images WHERE version_id = ?", entry.Version.ID)
 	if err != nil {
 		return fmt.Errorf("error deleting existing images for key %s: %w", key, err)
@@ -501,7 +501,7 @@ func (d *DB) putDatabaseEntry(key string, value []byte) error {
 			file.PickleScanResult, file.PickleScanMessage, file.VirusScanResult, file.ScannedAt,
 			file.DownloadUrl, file.Primary,
 			file.Hashes.AutoV2, file.Hashes.SHA256, file.Hashes.CRC32, file.Hashes.BLAKE3)
-		
+
 		if err != nil {
 			return fmt.Errorf("error inserting file %d for key %s: %w", file.ID, key, err)
 		}
@@ -513,7 +513,7 @@ func (d *DB) putDatabaseEntry(key string, value []byte) error {
 		if img.PostID != nil {
 			postID = *img.PostID
 		}
-		
+
 		_, err = tx.Exec(`
 			INSERT INTO model_images (
 				id, version_id, url, hash, width, height, nsfw, nsfw_level, created_at, post_id,
@@ -523,7 +523,7 @@ func (d *DB) putDatabaseEntry(key string, value []byte) error {
 		`, img.ID, entry.Version.ID, img.URL, img.Hash, img.Width, img.Height, img.Nsfw, img.NsfwLevel,
 			img.CreatedAt, postID, img.Stats.CryCount, img.Stats.LaughCount, img.Stats.LikeCount,
 			img.Stats.HeartCount, img.Stats.CommentCount, img.Username)
-		
+
 		if err != nil {
 			return fmt.Errorf("error inserting image %d for key %s: %w", img.ID, key, err)
 		}
@@ -547,18 +547,18 @@ func (d *DB) putPageState(key string, value []byte) error {
 		INSERT OR REPLACE INTO pagination_state (query_hash, current_page)
 		VALUES (?, ?)
 	`, queryHash, currentPage)
-	
+
 	if err != nil {
 		return fmt.Errorf("error storing page state for key %s: %w", key, err)
 	}
-	
+
 	return nil
 }
 
 // Delete removes a key from the database.
 func (d *DB) Delete(key []byte) error {
 	keyStr := string(key)
-	
+
 	d.Lock()
 	defer d.Unlock()
 
@@ -568,25 +568,25 @@ func (d *DB) Delete(key []byte) error {
 		if err != nil {
 			return fmt.Errorf("invalid version ID in key %s: %w", keyStr, err)
 		}
-		
+
 		result, err := d.db.Exec("DELETE FROM models WHERE version_id = ?", versionID)
 		if err != nil {
 			return fmt.Errorf("error deleting key %s: %w", keyStr, err)
 		}
-		
+
 		rowsAffected, _ := result.RowsAffected()
 		if rowsAffected == 0 {
 			return ErrNotFound
 		}
-		
+
 	} else if strings.HasPrefix(keyStr, "current_page_") {
 		queryHash := strings.TrimPrefix(keyStr, "current_page_")
-		
+
 		result, err := d.db.Exec("DELETE FROM pagination_state WHERE query_hash = ?", queryHash)
 		if err != nil {
 			return fmt.Errorf("error deleting key %s: %w", keyStr, err)
 		}
-		
+
 		rowsAffected, _ := result.RowsAffected()
 		if rowsAffected == 0 {
 			return ErrNotFound
@@ -594,7 +594,7 @@ func (d *DB) Delete(key []byte) error {
 	} else {
 		return fmt.Errorf("unsupported key format: %s", keyStr)
 	}
-	
+
 	return nil
 }
 
@@ -618,7 +618,7 @@ func (d *DB) Fold(fn func(key []byte, value []byte) error) error {
 		}
 
 		key := []byte(fmt.Sprintf("v_%d", versionID))
-		
+
 		// Get the full entry data
 		value, err := d.getDatabaseEntry(string(key))
 		if err != nil {
@@ -663,7 +663,7 @@ func (d *DB) Keys() <-chan []byte {
 
 	go func() {
 		defer close(keysChan)
-		
+
 		d.RLock()
 		defer d.RUnlock()
 
@@ -709,16 +709,16 @@ func (d *DB) Keys() <-chan []byte {
 func (d *DB) GetPageState(queryHash string) (int, error) {
 	d.RLock()
 	defer d.RUnlock()
-	
+
 	var currentPage int
 	err := d.db.QueryRow("SELECT current_page FROM pagination_state WHERE query_hash = ?", queryHash).Scan(&currentPage)
-	
+
 	if err == sql.ErrNoRows {
 		return 1, nil // Default to page 1 if not found
 	} else if err != nil {
 		return 0, fmt.Errorf("error reading page state for %s: %w", queryHash, err)
 	}
-	
+
 	log.WithField("queryHash", queryHash).Debugf("Retrieved page state: %d", currentPage)
 	return currentPage, nil
 }
@@ -727,16 +727,16 @@ func (d *DB) GetPageState(queryHash string) (int, error) {
 func (d *DB) SetPageState(queryHash string, nextPage int) error {
 	d.Lock()
 	defer d.Unlock()
-	
+
 	_, err := d.db.Exec(`
 		INSERT OR REPLACE INTO pagination_state (query_hash, current_page)
 		VALUES (?, ?)
 	`, queryHash, nextPage)
-	
+
 	if err != nil {
 		return fmt.Errorf("error setting page state for %s: %w", queryHash, err)
 	}
-	
+
 	log.WithField("queryHash", queryHash).Debugf("Set page state to: %d", nextPage)
 	return nil
 }
@@ -745,12 +745,12 @@ func (d *DB) SetPageState(queryHash string, nextPage int) error {
 func (d *DB) DeletePageState(queryHash string) error {
 	d.Lock()
 	defer d.Unlock()
-	
+
 	_, err := d.db.Exec("DELETE FROM pagination_state WHERE query_hash = ?", queryHash)
 	if err != nil {
 		return fmt.Errorf("error deleting page state for %s: %w", queryHash, err)
 	}
-	
+
 	log.WithField("queryHash", queryHash).Info("Deleted page state")
 	return nil
 }

@@ -33,7 +33,6 @@ var logLevelFlagValue string
 // logFormatFlagValue holds the value of the --log-format flag, bound by Cobra
 var logFormatFlagValue string
 
-
 // globalConfig holds the loaded configuration from config.Initialize
 var globalConfig models.Config
 

@@ -15,7 +15,7 @@ func TestCommandLineInterface(t *testing.T) {
 	// Build the binary first
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tests := []struct {
 		name        string
 		args        []string
@@ -41,7 +41,7 @@ func TestCommandLineInterface(t *testing.T) {
 			expectOut:   "Download models",
 		},
 		{
-			name:        "Images help", 
+			name:        "Images help",
 			args:        []string{"images", "--help"},
 			expectError: false,
 			expectOut:   "Download images",
@@ -59,12 +59,12 @@ func TestCommandLineInterface(t *testing.T) {
 			expectOut:   "unknown command",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(binaryPath, tt.args...)
 			output, err := cmd.CombinedOutput()
-			
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected command to fail, but it succeeded")
@@ -74,7 +74,7 @@ func TestCommandLineInterface(t *testing.T) {
 					t.Errorf("Expected command to succeed, got error: %v\nOutput: %s", err, string(output))
 				}
 			}
-			
+
 			if tt.expectOut != "" {
 				if !strings.Contains(string(output), tt.expectOut) {
 					t.Errorf("Expected output to contain %q, got: %s", tt.expectOut, string(output))
@@ -88,11 +88,11 @@ func TestCommandLineInterface(t *testing.T) {
 func TestConfigFileHandling(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	// Create a test config file
 	tempDir := t.TempDir()
 	configFile := filepath.Join(tempDir, "test_config.toml")
-	
+
 	configContent := `
 api_key = "test-key-123"
 save_path = "` + tempDir + `/models"
@@ -106,20 +106,20 @@ limit = 10
 level = "debug"
 format = "text"
 `
-	
+
 	err := os.WriteFile(configFile, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
-	
+
 	// Test debug show-config command to verify config loading
 	cmd := exec.Command(binaryPath, "--config", configFile, "debug", "show-config")
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		t.Errorf("Config loading failed: %v\nOutput: %s", err, string(output))
 	}
-	
+
 	// Check that the config values appear in the output
 	expectedValues := []string{
 		"test-key-123",
@@ -127,7 +127,7 @@ format = "text"
 		"1000",
 		"debug",
 	}
-	
+
 	outputStr := string(output)
 	for _, expected := range expectedValues {
 		if !strings.Contains(outputStr, expected) {
@@ -140,11 +140,11 @@ format = "text"
 func TestFlagOverrides(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	// Create a test config file
 	tempDir := t.TempDir()
 	configFile := filepath.Join(tempDir, "test_config.toml")
-	
+
 	configContent := `
 api_delay = 1000
 save_path = "` + tempDir + `/config-models"
@@ -156,37 +156,37 @@ limit = 20
 [log]
 level = "info"
 `
-	
+
 	err := os.WriteFile(configFile, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
-	
+
 	// Test with command line flags that should override config
-	cmd := exec.Command(binaryPath, 
+	cmd := exec.Command(binaryPath,
 		"--config", configFile,
-		"--save-path", tempDir + "/flag-models",
-		"--api-delay", "2000", 
+		"--save-path", tempDir+"/flag-models",
+		"--api-delay", "2000",
 		"--log-level", "debug",
 		"debug", "show-config")
-		
+
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		t.Errorf("Flag override test failed: %v\nOutput: %s", err, string(output))
 	}
-	
+
 	outputStr := string(output)
-	
+
 	// Check that flag values override config values
 	if !strings.Contains(outputStr, "flag-models") {
 		t.Error("Expected flag --save-path to override config save_path")
 	}
-	
+
 	if !strings.Contains(outputStr, "2000") {
 		t.Error("Expected flag --api-delay to override config api_delay")
 	}
-	
+
 	if !strings.Contains(outputStr, "debug") {
 		t.Error("Expected flag --log-level to override config log level")
 	}
@@ -196,9 +196,9 @@ level = "info"
 func TestDatabaseOperations(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tempDir := t.TempDir()
-	
+
 	tests := []struct {
 		name string
 		args []string
@@ -216,16 +216,16 @@ func TestDatabaseOperations(t *testing.T) {
 			args: []string{"--save-path", tempDir, "db", "stats"},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(binaryPath, tt.args...)
 			output, err := cmd.CombinedOutput()
-			
+
 			if err != nil {
 				t.Errorf("Database command failed: %v\nOutput: %s", err, string(output))
 			}
-			
+
 			// All DB commands should produce some output
 			if len(strings.TrimSpace(string(output))) == 0 {
 				t.Error("Expected database command to produce output")
@@ -241,26 +241,26 @@ func TestDownloadDryRun(t *testing.T) {
 	if apiKey == "" {
 		t.Skip("Skipping download test: CIVITAI_API_KEY environment variable not set")
 	}
-	
+
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tempDir := t.TempDir()
-	
+
 	// Test dry-run download with very limited scope
 	cmd := exec.Command(binaryPath,
 		"--save-path", tempDir,
 		"download",
-		"--limit", "2", 
+		"--limit", "2",
 		"--sort", "Most Downloaded",
 		"--query", "stable diffusion",
 		"--dry-run") // Assuming there's a dry-run flag
-		
+
 	// Set a reasonable timeout
 	cmd.Env = append(os.Environ(), "CIVITAI_API_KEY="+apiKey)
-	
+
 	output, err := cmd.CombinedOutput()
-	
+
 	// For dry-run, we expect it to succeed but not download files
 	if err != nil {
 		// If dry-run flag doesn't exist, that's also acceptable
@@ -278,12 +278,12 @@ func TestImageCommand(t *testing.T) {
 	if apiKey == "" {
 		t.Skip("Skipping images test: CIVITAI_API_KEY environment variable not set")
 	}
-	
+
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tempDir := t.TempDir()
-	
+
 	// Test images command with print-urls (if available)
 	cmd := exec.Command(binaryPath,
 		"--save-path", tempDir,
@@ -291,17 +291,17 @@ func TestImageCommand(t *testing.T) {
 		"--limit", "1",
 		"--sort", "Most Reactions",
 		"--model-id", "4201") // Use a known stable model ID
-		
+
 	cmd.Env = append(os.Environ(), "CIVITAI_API_KEY="+apiKey)
-	
+
 	// Set a timeout to prevent hanging
 	timer := time.AfterFunc(30*time.Second, func() {
 		cmd.Process.Kill()
 	})
 	defer timer.Stop()
-	
+
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		outputStr := string(output)
 		// Some output is expected even on "failure" due to rate limiting or API issues
@@ -313,39 +313,39 @@ func TestImageCommand(t *testing.T) {
 	}
 }
 
-// TestTorrentCommand tests torrent generation functionality  
+// TestTorrentCommand tests torrent generation functionality
 func TestTorrentCommand(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tempDir := t.TempDir()
-	
+
 	// Create some dummy model files to generate torrents for
 	modelDir := filepath.Join(tempDir, "models", "Checkpoint", "test-model", "v1.0")
 	err := os.MkdirAll(modelDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create model directory: %v", err)
 	}
-	
+
 	// Create a dummy model file
 	dummyFile := filepath.Join(modelDir, "model.safetensors")
 	err = os.WriteFile(dummyFile, []byte("dummy model data"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create dummy model file: %v", err)
 	}
-	
+
 	// Test torrent generation
 	cmd := exec.Command(binaryPath,
 		"--save-path", tempDir,
 		"torrent",
 		"--tracker-url", "http://test-tracker.com:8080/announce")
-		
+
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		t.Errorf("Torrent command failed: %v\nOutput: %s", err, string(output))
 	}
-	
+
 	// Check if .torrent file was created
 	expectedTorrent := filepath.Join(tempDir, "models", "Checkpoint", "test-model.torrent")
 	if _, err := os.Stat(expectedTorrent); os.IsNotExist(err) {
@@ -357,16 +357,16 @@ func TestTorrentCommand(t *testing.T) {
 func TestCleanCommand(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tempDir := t.TempDir()
-	
+
 	// Create some temporary files to clean up
 	tempFile1 := filepath.Join(tempDir, "test1.tmp")
-	tempFile2 := filepath.Join(tempDir, "subdir", "test2.tmp") 
+	tempFile2 := filepath.Join(tempDir, "subdir", "test2.tmp")
 	normalFile := filepath.Join(tempDir, "normal.txt")
-	
+
 	os.MkdirAll(filepath.Dir(tempFile2), 0755)
-	
+
 	files := []string{tempFile1, tempFile2, normalFile}
 	for _, file := range files {
 		err := os.WriteFile(file, []byte("test content"), 0644)
@@ -374,24 +374,24 @@ func TestCleanCommand(t *testing.T) {
 			t.Fatalf("Failed to create test file %s: %v", file, err)
 		}
 	}
-	
+
 	// Run clean command
 	cmd := exec.Command(binaryPath, "--save-path", tempDir, "clean")
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		t.Errorf("Clean command failed: %v\nOutput: %s", err, string(output))
 	}
-	
+
 	// Check that .tmp files were removed but normal files remain
 	if _, err := os.Stat(tempFile1); !os.IsNotExist(err) {
 		t.Error("Expected .tmp file to be cleaned up")
 	}
-	
+
 	if _, err := os.Stat(tempFile2); !os.IsNotExist(err) {
 		t.Error("Expected nested .tmp file to be cleaned up")
 	}
-	
+
 	if _, err := os.Stat(normalFile); os.IsNotExist(err) {
 		t.Error("Expected normal file to remain after cleanup")
 	}
@@ -401,22 +401,22 @@ func TestCleanCommand(t *testing.T) {
 func TestJSONOutput(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tempDir := t.TempDir()
-	
+
 	// Test JSON output for database status
 	cmd := exec.Command(binaryPath,
 		"--save-path", tempDir,
 		"--log-format", "json", // Try JSON logging
 		"db", "status")
-		
+
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		t.Errorf("JSON output test failed: %v\nOutput: %s", err, string(output))
 		return
 	}
-	
+
 	// Try to parse output as JSON (some of it might be JSON)
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
@@ -433,13 +433,13 @@ func TestJSONOutput(t *testing.T) {
 // Helper function to build the test binary
 func buildTestBinary(t *testing.T) string {
 	binaryPath := filepath.Join(t.TempDir(), "civitai-downloader-test")
-	
+
 	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
 	err := cmd.Run()
 	if err != nil {
 		t.Fatalf("Failed to build test binary: %v", err)
 	}
-	
+
 	return binaryPath
 }
 
@@ -447,7 +447,7 @@ func buildTestBinary(t *testing.T) string {
 func TestErrorHandling(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tests := []struct {
 		name string
 		args []string
@@ -459,7 +459,7 @@ func TestErrorHandling(t *testing.T) {
 			desc: "Should handle non-existent config file gracefully",
 		},
 		{
-			name: "Invalid save path", 
+			name: "Invalid save path",
 			args: []string{"--save-path", "/invalid/\x00/path", "db", "status"},
 			desc: "Should handle invalid save path",
 		},
@@ -469,12 +469,12 @@ func TestErrorHandling(t *testing.T) {
 			desc: "Should handle missing API key",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(binaryPath, tt.args...)
 			output, err := cmd.CombinedOutput()
-			
+
 			// We expect these to fail, but they should fail gracefully
 			if err == nil {
 				t.Logf("Command unexpectedly succeeded: %s", string(output))
@@ -492,14 +492,14 @@ func TestErrorHandling(t *testing.T) {
 func TestConcurrentOperations(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
-	
+
 	tempDir := t.TempDir()
-	
+
 	// Run multiple database status commands concurrently
 	const numConcurrent = 3
-	
+
 	done := make(chan error, numConcurrent)
-	
+
 	for i := 0; i < numConcurrent; i++ {
 		go func(id int) {
 			cmd := exec.Command(binaryPath, "--save-path", tempDir, "db", "status")
@@ -507,7 +507,7 @@ func TestConcurrentOperations(t *testing.T) {
 			done <- err
 		}(i)
 	}
-	
+
 	// Wait for all to complete
 	for i := 0; i < numConcurrent; i++ {
 		err := <-done
