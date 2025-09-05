@@ -525,7 +525,7 @@ func (d *DB) putDatabaseEntry(key string, value []byte) error {
 		}
 
 		_, err = tx.Exec(`
-			INSERT INTO model_images (
+			INSERT OR IGNORE INTO model_images (
 				id, version_id, url, hash, width, height, nsfw, nsfw_level, created_at, post_id,
 				stats_cry_count, stats_laugh_count, stats_like_count, stats_heart_count,
 				stats_comment_count, username

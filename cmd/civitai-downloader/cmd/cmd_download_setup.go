@@ -30,19 +30,10 @@ var allowedPeriods = map[string]bool{
 // It no longer uses Viper.
 func buildQueryParameters(cfg *models.Config) models.QueryParameters {
 
-	// Determine API page limit based on user's total limit preference
-	userLimit := cfg.Download.Limit
-	apiPageLimit := 100 // Default API page limit
-	if userLimit > 0 && userLimit < 100 {
-		log.Debugf("User limit (%d) is less than 100, using it for API page limit.", userLimit)
-		apiPageLimit = userLimit
-	} else if userLimit <= 0 {
-		log.Debugf("User limit (%d) is invalid or zero, using default API page limit 100.", userLimit)
-		// apiPageLimit remains 100
-	} else { // userLimit >= 100
-		log.Debugf("User limit (%d) is 100 or greater, using default API page limit 100 for efficiency.", userLimit)
-		// apiPageLimit remains 100
-	}
+	// API page limit should always be reasonable (not based on user limit)
+	// The user limit is applied internally during pagination, not passed to the API
+	apiPageLimit := 100 // Always use 100 for efficient API usage
+	log.Debugf("Using API page limit: %d (user limit %d will be applied internally)", apiPageLimit, cfg.Download.Limit)
 
 	sort := cfg.Download.Sort
 	if _, ok := allowedSortOrders[sort]; !ok {

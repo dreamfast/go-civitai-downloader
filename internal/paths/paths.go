@@ -15,9 +15,11 @@ var allowedTags = map[string]struct{}{
 	"modelName":   {},
 	"modelType":   {},
 	"creatorName": {},
+	"username":    {}, // For images API compatibility
 	"versionId":   {},
 	"versionName": {},
 	"baseModel":   {},
+	"imageId":     {}, // For images API compatibility
 	// Add more tags here if needed in the future
 }
 

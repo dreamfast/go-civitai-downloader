@@ -122,8 +122,15 @@ ModelInfoPathPattern = "{modelType}/{baseModel}/{modelId}-{modelName}"
 
 # --- Images Command Settings ---
 [Images]
-# Settings specific to the 'civitai-downloader images' command (if implemented).
-# Placeholder values shown.
+# Settings specific to the 'civitai-downloader images' command.
+
+# Directory structure for downloaded images using data from images API.
+# Available placeholders: {username}, {baseModel}, {imageId}
+# Values are automatically slugified (spaces become hyphens).
+# The filename will be determined by the downloader (usually {imageId}_original.ext).
+PathPattern = "{username}/{baseModel}"
+
+# Optional settings (uncomment to override defaults)
 # Limit = 100
 # PostID = 0
 # ModelID = 0

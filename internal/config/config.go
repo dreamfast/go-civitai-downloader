@@ -72,8 +72,7 @@ const (
 	DefaultConfigImagesOutputDir        = "" // Empty means SavePath/images
 	DefaultConfigImagesConcurrency      = 5
 	DefaultConfigImagesSaveMetadata     = true
-	DefaultConfigImagesPathPattern      = "{{.Username}}/{{.ImageID}}_{{.Filename}}"
-	DefaultConfigImagesSubfolderPattern = "{{.ModelName}}/{{.ModelVersionName}}" // if model context known
+	DefaultConfigImagesPathPattern      = "{username}/{baseModel}" // Simple pattern using data from images API
 
 	// Torrent specific defaults
 	DefaultConfigTorrentOutputDir         = "torrents"
@@ -154,7 +153,6 @@ func setViperDefaults(v *viper.Viper) {
 	v.SetDefault("images.concurrency", DefaultConfigImagesConcurrency)
 	v.SetDefault("images.savemetadata", DefaultConfigImagesSaveMetadata)
 	v.SetDefault("images.pathpattern", DefaultConfigImagesPathPattern)
-	v.SetDefault("images.subfolderpattern", DefaultConfigImagesSubfolderPattern)
 
 	// Torrent defaults
 	v.SetDefault("torrent.outputdir", DefaultConfigTorrentOutputDir)

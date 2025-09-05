@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -50,43 +51,25 @@ func imageDownloadWorker(
 		log.Infof("[%s] Processing image ID %d", logPrefix, job.ImageID)
 		fmt.Fprintf(writer, "[%s] Processing image %d...\n", logPrefix, job.ImageID)
 
-		// Step 1: Fetch full model details to get creator and base model info
-		if job.Metadata.ModelID == 0 {
-			log.Warnf("[%s] Image ID %d has no associated ModelID. Cannot determine path. Skipping.", logPrefix, job.ImageID)
-			atomic.AddInt64(failureCount, 1)
-			continue
+		// Step 1: Generate path using simple data from images API (no expensive model API calls)
+		imageData := map[string]string{
+			"username":  job.Metadata.Username,
+			"baseModel": job.Metadata.BaseModel,
+			"imageId":   strconv.Itoa(job.ImageID),
+		}
+		
+		// Fallback values for missing data
+		if imageData["username"] == "" {
+			imageData["username"] = "unknown_user"
+		}
+		if imageData["baseModel"] == "" {
+			imageData["baseModel"] = "unknown_basemodel"
 		}
 
-		modelDetails, err := apiClient.GetModelDetails(job.Metadata.ModelID)
+		// Use the Images.PathPattern instead of the complex VersionPathPattern
+		relPath, err := paths.GeneratePath(cfg.Images.PathPattern, imageData)
 		if err != nil {
-			log.WithError(err).Errorf("[%s] Failed to get model details for model ID %d (for image %d). Skipping.", logPrefix, job.Metadata.ModelID, job.ImageID)
-			atomic.AddInt64(failureCount, 1)
-			continue
-		}
-
-		// Find the specific version to get the baseModel
-		var modelVersion *models.ModelVersion
-		for _, v := range modelDetails.ModelVersions {
-			if v.ID == job.Metadata.ModelVersionID {
-				versionCopy := v // Make a copy to avoid pointer issues
-				modelVersion = &versionCopy
-				break
-			}
-		}
-
-		if modelVersion == nil && len(modelDetails.ModelVersions) > 0 {
-			// Fallback to the latest version if the specific one isn't found
-			log.Debugf("[%s] Could not find specific version %d for image %d. Falling back to latest version %d for baseModel info.", logPrefix, job.Metadata.ModelVersionID, job.ImageID, modelDetails.ModelVersions[0].ID)
-			latestVersion := modelDetails.ModelVersions[0]
-			modelVersion = &latestVersion
-		}
-
-		// Step 2: Generate the path using the fetched details
-		data := buildPathData(&modelDetails, modelVersion, nil) // file is nil for image paths
-		// We use the VersionPathPattern here to keep the structure consistent with model downloads
-		relPath, err := paths.GeneratePath(cfg.Download.VersionPathPattern, data)
-		if err != nil {
-			log.WithError(err).Errorf("[%s] Failed to generate path for image %d. Skipping.", logPrefix, job.ImageID)
+			log.WithError(err).Errorf("[%s] Failed to generate path for image %d using pattern '%s'. Skipping.", logPrefix, job.ImageID, cfg.Images.PathPattern)
 			atomic.AddInt64(failureCount, 1)
 			continue
 		}

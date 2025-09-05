@@ -64,11 +64,12 @@ type (
 	// Added to config for potential future use, primarily driven by flags now.
 	ImagesConfig struct {
 		// Strings first
-		Username  string `toml:"Username"`
-		Nsfw      string `toml:"Nsfw"`
-		Sort      string `toml:"Sort"`
-		Period    string `toml:"Period"`
-		OutputDir string `toml:"OutputDir"`
+		Username    string `toml:"Username"`
+		Nsfw        string `toml:"Nsfw"`
+		Sort        string `toml:"Sort"`
+		Period      string `toml:"Period"`
+		OutputDir   string `toml:"OutputDir"`
+		PathPattern string `toml:"PathPattern"`
 		// Integers
 		Limit          int `toml:"Limit"`
 		PostID         int `toml:"PostID"`
@@ -288,6 +289,7 @@ type (
 		URL            string      `json:"url"`
 		Hash           string      `json:"hash"`
 		Username       string      `json:"username,omitempty"`
+		BaseModel      string      `json:"baseModel,omitempty"`
 		ID             int         `json:"id"`
 		Width          int         `json:"width"`
 		Height         int         `json:"height"`
