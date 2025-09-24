@@ -30,7 +30,6 @@ Check out our current release [here](https://github.com/dreamfast/go-civitai-dow
 *   **Structured Logging:** Uses Logrus for leveled logging (configurable via flags).
 *   **Interactive Progress:** Uses uilive to show concurrent download progress.
 *   **Torrent Generation:** Command to generate `.torrent` and optional magnet link files for downloaded model directories.
-*   **Search Indexing (Experimental):** Uses Bleve to index downloaded items (metadata, file paths, torrent info) for potential future search features.
 *   **Images Path Configuration:** Configurable path patterns for images downloads using `{username}/{baseModel}` placeholders, allowing simple organization by author and base model.
 
 ## Caveats
@@ -146,7 +145,6 @@ The application is run via the command line.
 *   `--api-timeout int`: Override `ApiClientTimeoutSec` from config (seconds).
 *   `--api-delay int`: Override `ApiDelayMs` from config (milliseconds).
 *   `--db-path string`: Override `DatabasePath` from config.
-*   `--index-path string`: Override `BleveIndexPath` from config.
 
 **Commands:**
 
@@ -376,47 +374,6 @@ You can specify multiple trackers using the `--announce` flag repeatedly. This i
   --announce http://tracker.ipv6tracker.org:80/announce
 ```
 
-### `search`
-
-Searches the local Bleve index for downloaded items (models, images, etc.) based on a query string.
-
-```bash
-./civitai-downloader search [flags] <QUERY>
-```
-
-**`search` Flags:**
-
-*   The query `-q|--query` uses [Bleve query string syntax](https://blevesearch.com/docs/Query-String-Query/). You can search specific fields using `+field:value`.
-
-**Indexed Fields (Examples):** `id`, `type`, `name`, `modelName`, `versionName`, `baseModel`, `creatorName`, `tags`, `prompt`, `nsfwLevel`, `fileFormat`, `filePrecision`, `fileSizeType`, `torrentPath`, `magnetLink`.
-
-**Examples:**
-
-*   Search for items with "lora" in any indexed field:
-    ```bash
-    ./civitai-downloader search lora
-    ```
-
-*   Search specifically for models named "Dreamwood":
-    ```bash
-    ./civitai-downloader search +modelName:Dreamwood
-    ```
-
-*   Search for items tagged with "style":
-    ```bash
-    ./civitai-downloader search +tags:style
-    ```
-
-*   Search for Checkpoint models:
-    ```bash
-    ./civitai-downloader search +type:Checkpoint
-    ```
-
-*   Search for Safetensor files:
-    ```bash
-    ./civitai-downloader search +fileFormat:safetensor
-    ```
-
 ## Project Structure
 
 *   `cmd/civitai-downloader/`: Main application entry point and Cobra command definitions.
@@ -442,4 +399,3 @@ Searches the local Bleve index for downloaded items (models, images, etc.) based
 *   [github.com/mattn/go-sqlite3](https://github.com/mattn/go-sqlite3): SQLite database driver.
 *   [github.com/zeebo/blake3](https://github.com/zeebo/blake3): BLAKE3 hashing for file verification.
 *   [github.com/anacrolix/torrent](https://github.com/anacrolix/torrent): BitTorrent library (metainfo, bencode).
-*   [github.com/blevesearch/bleve](https://github.com/blevesearch/bleve): Full-text search and indexing library. 

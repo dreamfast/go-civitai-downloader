@@ -10,7 +10,7 @@ GO=go
 # Build the application
 build:
 	@echo "Building $(BINARY_NAME)..."
-	$(GO) build -o $(BINARY_NAME) $(MAIN_PKG)
+	CGO_ENABLED=1 $(GO) build -o $(BINARY_NAME) $(MAIN_PKG)
 	@echo "$(BINARY_NAME) built successfully."
 
 # Run the application (passes arguments after --)
@@ -79,11 +79,11 @@ clean:
 release: clean
 	@echo "Building release binaries..."
 	@mkdir -p release
-	GOOS=linux GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-linux-amd64 $(MAIN_PKG)
-	GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-linux-arm64 $(MAIN_PKG)
-	GOOS=windows GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-windows-amd64.exe $(MAIN_PKG)
-	GOOS=darwin GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-darwin-amd64 $(MAIN_PKG)
-	GOOS=darwin GOARCH=arm64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-darwin-arm64 $(MAIN_PKG)
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-linux-amd64 $(MAIN_PKG)
+	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-linux-arm64 $(MAIN_PKG)
+	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-windows-amd64.exe $(MAIN_PKG)
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-darwin-amd64 $(MAIN_PKG)
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-darwin-arm64 $(MAIN_PKG)
 	@echo "Creating compressed archives..."
 	cd release && tar -czf $(BINARY_NAME)-linux-amd64.tar.gz $(BINARY_NAME)-linux-amd64 && rm $(BINARY_NAME)-linux-amd64
 	cd release && tar -czf $(BINARY_NAME)-linux-arm64.tar.gz $(BINARY_NAME)-linux-arm64 && rm $(BINARY_NAME)-linux-arm64
