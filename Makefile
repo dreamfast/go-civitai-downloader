@@ -79,18 +79,32 @@ clean:
 release: clean
 	@echo "Building release binaries..."
 	@mkdir -p release
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-linux-amd64 $(MAIN_PKG)
-	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-linux-arm64 $(MAIN_PKG)
-	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-windows-amd64.exe $(MAIN_PKG)
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-darwin-amd64 $(MAIN_PKG)
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-darwin-arm64 $(MAIN_PKG)
-	@echo "Creating compressed archives..."
-	cd release && tar -czf $(BINARY_NAME)-linux-amd64.tar.gz $(BINARY_NAME)-linux-amd64 && rm $(BINARY_NAME)-linux-amd64
-	cd release && tar -czf $(BINARY_NAME)-linux-arm64.tar.gz $(BINARY_NAME)-linux-arm64 && rm $(BINARY_NAME)-linux-arm64
-	cd release && zip $(BINARY_NAME)-windows-amd64.zip $(BINARY_NAME)-windows-amd64.exe && rm $(BINARY_NAME)-windows-amd64.exe
-	cd release && zip $(BINARY_NAME)-darwin-amd64.zip $(BINARY_NAME)-darwin-amd64 && rm $(BINARY_NAME)-darwin-amd64
-	cd release && zip $(BINARY_NAME)-darwin-arm64.zip $(BINARY_NAME)-darwin-arm64 && rm $(BINARY_NAME)-darwin-arm64
-	@echo "Release archives created successfully in ./release directory:"
+	@echo "Building native binary for current platform..."
+	CGO_ENABLED=1 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-native $(MAIN_PKG)
+	@echo "Note: Cross-compilation with CGO requires platform-specific toolchains."
+	@echo "For production releases, build on each target platform separately."
+	@echo "Creating compressed archive for native binary..."
+	cd release && tar -czf $(BINARY_NAME)-native.tar.gz $(BINARY_NAME)-native && rm $(BINARY_NAME)-native
+	@echo "Native release archive created successfully in ./release directory:"
+	@ls -la release/
+
+# Build cross-platform releases (requires platform-specific toolchains)
+release-cross: clean
+	@echo "WARNING: Cross-compilation with CGO requires proper toolchains for each target platform."
+	@echo "Install required packages: sudo pacman -S aarch64-linux-gnu-gcc mingw-w64-gcc"
+	@echo "Building cross-platform release binaries..."
+	@mkdir -p release
+	@echo "Building Linux AMD64..."
+	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-linux-amd64 $(MAIN_PKG) || echo "Linux AMD64 build failed"
+	@echo "Building Linux ARM64..."
+	@CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ CGO_ENABLED=1 GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-linux-arm64 $(MAIN_PKG) || echo "Linux ARM64 build failed"
+	@echo "Building Windows AMD64..."
+	@CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ CGO_ENABLED=1 GOOS=windows GOARCH=amd64 $(GO) build -ldflags="-s -w" -o release/$(BINARY_NAME)-windows-amd64.exe $(MAIN_PKG) || echo "Windows AMD64 build failed"
+	@echo "Creating compressed archives for successfully built binaries..."
+	@test -f release/$(BINARY_NAME)-linux-amd64 && (cd release && tar -czf $(BINARY_NAME)-linux-amd64.tar.gz $(BINARY_NAME)-linux-amd64 && rm $(BINARY_NAME)-linux-amd64) || true
+	@test -f release/$(BINARY_NAME)-linux-arm64 && (cd release && tar -czf $(BINARY_NAME)-linux-arm64.tar.gz $(BINARY_NAME)-linux-arm64 && rm $(BINARY_NAME)-linux-arm64) || true
+	@test -f release/$(BINARY_NAME)-windows-amd64.exe && (cd release && zip $(BINARY_NAME)-windows-amd64.zip $(BINARY_NAME)-windows-amd64.exe && rm $(BINARY_NAME)-windows-amd64.exe) || true
+	@echo "Cross-platform release archives created (if builds succeeded):"
 	@ls -la release/
 
 # Show help message
@@ -109,7 +123,8 @@ help:
 	@echo "  check           - Run fmt, vet, lint, security, and short tests"
 	@echo "  ci              - Run full CI pipeline (fmt, vet, lint, security, integration tests)"
 	@echo "  clean           - Clean build artifacts"
-	@echo "  release         - Build and compress release binaries (.tar.gz for Linux, .zip for Windows/macOS)"
+	@echo "  release         - Build native release binary for current platform"
+	@echo "  release-cross   - Build cross-platform release binaries (requires toolchains)"
 	@echo "  help            - Show this help message"
 	@echo ""
 	@echo "Examples:"
@@ -121,4 +136,4 @@ help:
 all: build
 
 # Phony targets (targets that don't represent files)
-.PHONY: all build run test test-integration test-short lint security fmt vet tidy check ci clean release help 
+.PHONY: all build run test test-integration test-short lint security fmt vet tidy check ci clean release release-cross help 
