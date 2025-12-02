@@ -22,7 +22,7 @@ func TestNewDownloader(t *testing.T) {
 	apiKey := "test-key"
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 
-	downloader := NewDownloader(httpClient, apiKey)
+	downloader := NewDownloader(httpClient, apiKey, "")
 
 	if downloader == nil {
 		t.Fatal("Expected downloader to be created")
@@ -39,7 +39,7 @@ func TestNewDownloader(t *testing.T) {
 
 // TestNewDownloader_NilClient tests that a default client is created when nil is passed
 func TestNewDownloader_NilClient(t *testing.T) {
-	downloader := NewDownloader(nil, "test-key")
+	downloader := NewDownloader(nil, "test-key", "")
 
 	if downloader == nil {
 		t.Fatal("Expected downloader to be created")
@@ -74,7 +74,7 @@ func TestDownloadFile_Success(t *testing.T) {
 	tempDir := t.TempDir()
 	targetPath := filepath.Join(tempDir, "test-file.bin")
 
-	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key")
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key", "")
 
 	// Test hashes
 	hashes := models.Hashes{
@@ -121,7 +121,7 @@ func TestDownloadFile_HashMismatch(t *testing.T) {
 	tempDir := t.TempDir()
 	targetPath := filepath.Join(tempDir, "test-file.bin")
 
-	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key")
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key", "")
 
 	// Test hashes with wrong hash
 	hashes := models.Hashes{
@@ -152,7 +152,7 @@ func TestDownloadFile_NetworkError(t *testing.T) {
 	tempDir := t.TempDir()
 	targetPath := filepath.Join(tempDir, "test-file.bin")
 
-	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key")
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key", "")
 
 	// Test hashes
 	hashes := models.Hashes{
@@ -181,7 +181,7 @@ func TestDownloadFile_Timeout(t *testing.T) {
 	targetPath := filepath.Join(tempDir, "test-file.bin")
 
 	// Use very short timeout
-	downloader := NewDownloader(&http.Client{Timeout: 100 * time.Millisecond}, "test-key")
+	downloader := NewDownloader(&http.Client{Timeout: 100 * time.Millisecond}, "test-key", "")
 
 	// Test hashes
 	hashes := models.Hashes{
@@ -241,7 +241,7 @@ func TestDownloadFile_Progress(t *testing.T) {
 	tempDir := t.TempDir()
 	targetPath := filepath.Join(tempDir, "test-large-file.bin")
 
-	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key")
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key", "")
 
 	// Test hashes
 	hashes := models.Hashes{
@@ -266,14 +266,14 @@ func TestDownloadFile_Progress(t *testing.T) {
 	}
 }
 
-// TestDownloadFile_Authentication tests that API key is used in requests
+// TestDownloadFile_Authentication tests that API key is used in requests via token query parameter
 func TestDownloadFile_Authentication(t *testing.T) {
 	expectedAPIKey := "test-api-key-123"
-	var receivedAuth string
+	var receivedToken string
 
-	// Create mock server that checks authentication
+	// Create mock server that checks authentication via query parameter
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedAuth = r.Header.Get("Authorization")
+		receivedToken = r.URL.Query().Get("token")
 		w.Header().Set("Content-Disposition", "attachment; filename=test-file.bin")
 		w.Write([]byte("test content"))
 	}))
@@ -283,7 +283,7 @@ func TestDownloadFile_Authentication(t *testing.T) {
 	tempDir := t.TempDir()
 	targetPath := filepath.Join(tempDir, "test-file.bin")
 
-	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, expectedAPIKey)
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, expectedAPIKey, "")
 
 	// Create test hash
 	testData := []byte("test content")
@@ -300,10 +300,9 @@ func TestDownloadFile_Authentication(t *testing.T) {
 		t.Fatalf("DownloadFile failed: %v", err)
 	}
 
-	// Verify API key was sent
-	expectedAuth := "Bearer " + expectedAPIKey
-	if receivedAuth != expectedAuth {
-		t.Errorf("Expected Authorization header '%s', got '%s'", expectedAuth, receivedAuth)
+	// Verify API key was sent via token query parameter
+	if receivedToken != expectedAPIKey {
+		t.Errorf("Expected token query param '%s', got '%s'", expectedAPIKey, receivedToken)
 	}
 }
 
@@ -324,7 +323,7 @@ func TestDownloadFile_FileNaming(t *testing.T) {
 	tempDir := t.TempDir()
 	targetPath := filepath.Join(tempDir, "original-name.bin")
 
-	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key")
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key", "")
 
 	hashes := models.Hashes{
 		BLAKE3: hashHex,
@@ -370,7 +369,7 @@ func BenchmarkDownloadFile(b *testing.B) {
 	// Setup test directory
 	tempDir := b.TempDir()
 
-	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key")
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "test-key", "")
 	hashes := models.Hashes{
 		BLAKE3: hashHex,
 	}

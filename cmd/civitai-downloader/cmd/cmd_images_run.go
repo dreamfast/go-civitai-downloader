@@ -139,7 +139,7 @@ func runImages(cmd *cobra.Command, args []string) {
 		Transport: globalHttpTransport,
 		Timeout:   0,
 	}
-	dl := downloader.NewDownloader(downloadHttpClient, cfg.APIKey)
+	dl := downloader.NewDownloader(downloadHttpClient, cfg.APIKey, cfg.SessionCookie)
 
 	finalBaseTargetDir := targetDir
 	log.Infof("Preparing to download images to base directory: %s", finalBaseTargetDir)

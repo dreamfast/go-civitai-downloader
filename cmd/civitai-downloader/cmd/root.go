@@ -31,6 +31,9 @@ var apiDelayFlag int
 // apiTimeoutFlag holds the value of the --api-timeout flag
 var apiTimeoutFlag int
 
+// sessionCookieFlag holds the browser session cookie for login-required downloads
+var sessionCookieFlag string
+
 // logLevelFlagValue holds the value of the --log-level flag, bound by Cobra
 var logLevelFlagValue string
 
@@ -70,6 +73,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&savePathFlag, "save-path", "", "Directory to save models (overrides config)")                                        // Default empty string
 	rootCmd.PersistentFlags().IntVar(&apiDelayFlag, "api-delay", -1, "Delay between API calls in ms (overrides config, -1 uses config default)")              // Default -1
 	rootCmd.PersistentFlags().IntVar(&apiTimeoutFlag, "api-timeout", -1, "Timeout for API HTTP client in seconds (overrides config, -1 uses config default)") // Default -1
+	rootCmd.PersistentFlags().StringVar(&sessionCookieFlag, "session-cookie", "", "Browser session cookie for login-required downloads (overrides config)")
 
 	// Removed viper.BindPFlag calls
 	// Removed viper.SetDefault calls
@@ -372,6 +376,13 @@ func applyPersistentFlags(cmd *cobra.Command, flags *config.CliFlags) {
 		flags.APIClientTimeoutSec = &apiTimeoutFlag
 	} else {
 		log.Debugf("[loadGlobalConfig] --api-timeout flag not detected or is default -1.")
+	}
+
+	if sessionCookieFlag != "" {
+		log.Debugf("[loadGlobalConfig] --session-cookie flag detected")
+		flags.SessionCookie = &sessionCookieFlag
+	} else {
+		log.Debugf("[loadGlobalConfig] --session-cookie flag not detected or is empty.")
 	}
 }
 

@@ -188,6 +188,7 @@ type CliFlags struct {
 	APIDelayMs          *int    // --api-delay
 	APIClientTimeoutSec *int    // --api-timeout
 	APIKey              *string // --api-key (download command, but promote to global?)
+	SessionCookie       *string // --session-cookie (for login-required downloads)
 	// Flags for potentially new config options:
 	MaxRetries          *int // Needs new flag e.g. --max-retries
 	InitialRetryDelayMs *int // Needs new flag e.g. --retry-delay
@@ -419,6 +420,10 @@ func applyGlobalFlags(cfg *models.Config, flags CliFlags) {
 	if flags.APIKey != nil {
 		log.Debugf("[Initialize] Overriding APIKey from flag.")
 		cfg.APIKey = *flags.APIKey
+	}
+	if flags.SessionCookie != nil {
+		log.Debugf("[Initialize] Overriding SessionCookie from flag.")
+		cfg.SessionCookie = *flags.SessionCookie
 	}
 	if flags.SavePath != nil {
 		log.Debugf("[Initialize] Overriding SavePath from flag: '%s'", *flags.SavePath)
