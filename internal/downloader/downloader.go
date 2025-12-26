@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,23 +27,43 @@ var (
 	ErrHttpRequest  = errors.New("HTTP request creation/execution error")
 )
 
+// UserAgent is the browser User-Agent string used for HTTP requests to avoid 401 errors
+const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
 // Downloader handles downloading files with progress and hash checks.
 type Downloader struct {
-	client *http.Client
-	apiKey string // Add field to store API key
+	client      *http.Client
+	apiKey      string // API key for token-based auth
+	sessionCookie string // Browser session cookie for login-required downloads
 }
 
 // NewDownloader creates a new Downloader instance.
-func NewDownloader(client *http.Client, apiKey string) *Downloader {
+// sessionCookie is optional - pass empty string if not using cookie auth.
+func NewDownloader(client *http.Client, apiKey string, sessionCookie string) *Downloader {
 	if client == nil {
-		// Provide a default client if none is passed
+		// Create a client with custom redirect handling to preserve headers
 		client = &http.Client{
 			Timeout: 15 * time.Minute,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return errors.New("stopped after 10 redirects")
+				}
+				// Preserve User-Agent and Cookie headers on redirects
+				if len(via) > 0 {
+					req.Header.Set("User-Agent", UserAgent)
+					// Preserve cookies on redirect (important for Civitai auth)
+					if cookie := via[0].Header.Get("Cookie"); cookie != "" {
+						req.Header.Set("Cookie", cookie)
+					}
+				}
+				return nil
+			},
 		}
 	}
 	return &Downloader{
-		client: client,
-		apiKey: apiKey, // Store the API key
+		client:        client,
+		apiKey:        apiKey,
+		sessionCookie: sessionCookie,
 	}
 }
 
@@ -120,18 +141,47 @@ func (d *Downloader) checkExistingFile(targetFilepath string, hashes models.Hash
 }
 
 // createHTTPRequest creates and configures an HTTP request for downloading
-func (d *Downloader) createHTTPRequest(url string) (*http.Request, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("%w: creating download request for %s: %w", ErrHttpRequest, url, err)
+// Uses both token query parameter AND Authorization header for authentication
+func (d *Downloader) createHTTPRequest(downloadURL string) (*http.Request, error) {
+	// Add token as query parameter if API key is set
+	// This is required because Authorization headers are stripped on redirect to S3
+	finalURL := downloadURL
+	if d.apiKey != "" {
+		parsedURL, err := url.Parse(downloadURL)
+		if err != nil {
+			return nil, fmt.Errorf("%w: parsing download URL %s: %w", ErrHttpRequest, downloadURL, err)
+		}
+		query := parsedURL.Query()
+		query.Set("token", d.apiKey)
+		parsedURL.RawQuery = query.Encode()
+		finalURL = parsedURL.String()
+		log.Debug("Added token query parameter to download URL.")
+	} else {
+		log.Debug("No API Key found, skipping token parameter for download.")
 	}
 
-	if d.apiKey != "" {
-		log.Debug("Adding Authorization header to download request.")
-		req.Header.Set("Authorization", "Bearer "+d.apiKey)
-	} else {
-		log.Debug("No API Key found, skipping Authorization header for download.")
+	req, err := http.NewRequest("GET", finalURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: creating download request for %s: %w", ErrHttpRequest, finalURL, err)
 	}
+
+	// Set User-Agent to avoid 401 errors from Civitai
+	req.Header.Set("User-Agent", UserAgent)
+
+	// Also set Authorization header for initial request (before redirect)
+	// This helps with Civitai's auth check before redirecting to S3
+	if d.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+d.apiKey)
+	}
+
+	// Set session cookie if provided - this enables login-required downloads
+	if d.sessionCookie != "" {
+		req.Header.Set("Cookie", d.sessionCookie)
+		log.Debug("Added session cookie to download request.")
+	}
+
+	// Log the original download URL for debugging
+	log.Debugf("Original download URL: %s", downloadURL)
 
 	return req, nil
 }
@@ -321,9 +371,47 @@ func (d *Downloader) DownloadFile(targetFilepath string, url string, hashes mode
 	}
 	defer resp.Body.Close()
 
+	// Log final URL after redirects for debugging
+	log.Debugf("Final URL after redirects: %s", resp.Request.URL.String())
+
 	if resp.StatusCode != http.StatusOK {
 		log.Errorf("Error downloading file: Received status code %d from %s", resp.StatusCode, url)
 		return "", fmt.Errorf("%w: received status %d from %s", ErrHttpStatus, resp.StatusCode, url)
+	}
+
+	// Check Content-Type - if we get HTML, it's likely an error page (login required, etc.)
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "text/html") {
+		// Read a portion to analyze what we got
+		bodyPreview := make([]byte, 2048)
+		n, _ := resp.Body.Read(bodyPreview)
+		bodyStr := string(bodyPreview[:n])
+
+		// Try to detect specific error conditions
+		var errorReason string
+		switch {
+		case strings.Contains(bodyStr, "early access") || strings.Contains(bodyStr, "Early Access"):
+			errorReason = "model is in Early Access (requires Supporter membership)"
+		case strings.Contains(bodyStr, "login") || strings.Contains(bodyStr, "sign in") || strings.Contains(bodyStr, "Sign In"):
+			errorReason = "model requires login (creator has restricted downloads)"
+		case strings.Contains(bodyStr, "not found") || strings.Contains(bodyStr, "404"):
+			errorReason = "model or file not found"
+		case strings.Contains(bodyStr, "unavailable") || strings.Contains(bodyStr, "removed"):
+			errorReason = "model has been removed or is unavailable"
+		default:
+			errorReason = "download restricted or requires browser login"
+		}
+
+		log.Errorf("Received HTML response instead of file: %s", errorReason)
+		log.Errorf("Content-Type: %s, Final URL: %s", contentType, resp.Request.URL.String())
+		log.Debugf("Response body preview: %s", bodyStr)
+		return "", fmt.Errorf("%w: %s - URL: %s", ErrHttpStatus, errorReason, url)
+	}
+
+	// Check Content-Length - warn if 0 or suspiciously small
+	contentLength := resp.Header.Get("Content-Length")
+	if contentLength == "0" {
+		log.Warnf("Content-Length is 0 - this may indicate an error or restricted content")
 	}
 
 	// Extract filename from response and construct final path
@@ -363,27 +451,44 @@ func (d *Downloader) DownloadFile(targetFilepath string, url string, hashes mode
 // DownloadImage downloads an image from a URL to a specified directory.
 // It determines the filename from the URL path.
 // Returns the final filename (not the full path) and an error if one occurred.
-func (d *Downloader) DownloadImage(targetDir string, url string) (string, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("%w: creating image request for %s: %w", ErrHttpRequest, url, err)
-	}
+func (d *Downloader) DownloadImage(targetDir string, imageURL string) (string, error) {
+	// Add token as query parameter if API key is set
+	finalURL := imageURL
 	if d.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+d.apiKey)
+		parsedURL, err := url.Parse(imageURL)
+		if err != nil {
+			return "", fmt.Errorf("%w: parsing image URL %s: %w", ErrHttpRequest, imageURL, err)
+		}
+		query := parsedURL.Query()
+		query.Set("token", d.apiKey)
+		parsedURL.RawQuery = query.Encode()
+		finalURL = parsedURL.String()
+	}
+
+	req, err := http.NewRequest("GET", finalURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("%w: creating image request for %s: %w", ErrHttpRequest, finalURL, err)
+	}
+	// Set User-Agent to avoid 401 errors from Civitai
+	req.Header.Set("User-Agent", UserAgent)
+
+	// Set session cookie if provided
+	if d.sessionCookie != "" {
+		req.Header.Set("Cookie", d.sessionCookie)
 	}
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%w: performing image request for %s: %v", ErrHttpRequest, url, err)
+		return "", fmt.Errorf("%w: performing image request for %s: %v", ErrHttpRequest, imageURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%w: received status %d for image %s", ErrHttpStatus, resp.StatusCode, url)
+		return "", fmt.Errorf("%w: received status %d for image %s", ErrHttpStatus, resp.StatusCode, imageURL)
 	}
 
-	// Determine filename from URL
-	baseName := filepath.Base(url)
+	// Determine filename from original URL (without token param)
+	baseName := filepath.Base(imageURL)
 	// A simple cleanup to remove query params from filename
 	if queryIndex := strings.Index(baseName, "?"); queryIndex != -1 {
 		baseName = baseName[:queryIndex]

@@ -138,7 +138,7 @@ func setupDownloadEnvironment(cfg *models.Config) (db *database.DB, fileDownload
 		Timeout:   0, // Timeout should be handled by transport or context
 		Transport: globalHttpTransport,
 	}
-	fileDownloader = downloader.NewDownloader(mainHttpClient, cfg.APIKey)
+	fileDownloader = downloader.NewDownloader(mainHttpClient, cfg.APIKey, cfg.SessionCookie)
 
 	// --- Setup Image Downloader ---
 	if cfg.Download.SaveVersionImages || cfg.Download.SaveModelImages {
@@ -147,7 +147,7 @@ func setupDownloadEnvironment(cfg *models.Config) (db *database.DB, fileDownload
 			Timeout:   0,
 			Transport: globalHttpTransport,
 		}
-		imageDownloader = downloader.NewDownloader(imgHttpClient, cfg.APIKey)
+		imageDownloader = downloader.NewDownloader(imgHttpClient, cfg.APIKey, cfg.SessionCookie)
 	}
 	if imageDownloader != nil {
 		log.Debug("Image downloader initialized successfully.")

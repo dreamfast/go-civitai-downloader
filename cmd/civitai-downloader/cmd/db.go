@@ -436,7 +436,7 @@ func initializeDownloader() *downloader.Downloader {
 	}
 
 	log.Debug("Downloader initialized.")
-	return downloader.NewDownloader(httpClient, globalConfig.APIKey)
+	return downloader.NewDownloader(httpClient, globalConfig.APIKey, globalConfig.SessionCookie)
 }
 
 // performRedownload performs the actual redownload of a file
@@ -553,7 +553,7 @@ func runDbRedownload(cmd *cobra.Command, args []string) {
 	// TODO: Refactor client creation/sharing?
 	downloaderHttpClient := &http.Client{Timeout: 30 * time.Minute} // Longer timeout for downloads
 	// Use correct case for APIKey
-	fileDownloader := downloader.NewDownloader(downloaderHttpClient, globalConfig.APIKey)
+	fileDownloader := downloader.NewDownloader(downloaderHttpClient, globalConfig.APIKey, globalConfig.SessionCookie)
 
 	// Perform the download, checking the error
 	// Pass the Model Version ID from the database entry

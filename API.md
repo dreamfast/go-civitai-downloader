@@ -425,3 +425,92 @@ This would yield the following response:
     "nextPage": "https://civitai.com/api/v1/tags?limit=3&page=2"
   }
 }
+
+---
+
+## Implementation Notes
+
+This section documents important implementation details and discoveries for developers building API clients.
+
+### Field Type Variations
+
+#### `allowCommercialUse` Field
+
+The `allowCommercialUse` field in model responses can be returned as either a **single string** or an **array of strings**, depending on the model. Implementations should handle both formats:
+
+```go
+// Example: Handle both string and []string
+type StringOrStringSlice []string
+
+func (s *StringOrStringSlice) UnmarshalJSON(data []byte) error {
+    var str string
+    if err := json.Unmarshal(data, &str); err == nil {
+        *s = []string{str}
+        return nil
+    }
+    var arr []string
+    if err := json.Unmarshal(data, &arr); err != nil {
+        return err
+    }
+    *s = arr
+    return nil
+}
+```
+
+### HTTP Request Requirements
+
+#### User-Agent Header
+
+Requests to the Civitai API (especially download URLs) may return **401 Unauthorized** if no User-Agent header is provided. Use a browser-like User-Agent:
+
+```
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36
+```
+
+### Download Authentication
+
+#### Token Query Parameter (Recommended)
+
+For downloading files, use the `?token=` query parameter rather than the `Authorization` header. This is because:
+
+1. Civitai download URLs redirect to AWS S3 for file hosting
+2. Cross-domain redirects strip the `Authorization` header for security
+3. The query parameter persists through all redirects
+
+```bash
+# Correct - token persists through redirects
+wget "https://civitai.com/api/download/models/12345?token=YOUR_API_KEY" --content-disposition
+
+# May fail - Authorization header stripped on S3 redirect
+curl -H "Authorization: Bearer YOUR_API_KEY" https://civitai.com/api/download/models/12345
+```
+
+#### Session Cookie Authentication
+
+Some models require users to be logged in (creator-restricted downloads). For these, you need a browser session cookie:
+
+1. Log into Civitai in your browser
+2. Open Developer Tools (F12) → Application → Cookies
+3. Copy the value of `__Secure-civitai-token`
+4. Pass it in the `Cookie` header:
+
+```
+Cookie: __Secure-civitai-token=YOUR_SESSION_COOKIE_VALUE
+```
+
+**Important**: Session cookies must be preserved through redirects. Configure your HTTP client to forward cookies on redirect.
+
+### Error Response Detection
+
+When a download fails due to authentication or access restrictions, Civitai returns an HTML error page instead of the file. Implementations should check the `Content-Type` header:
+
+```
+Content-Type: text/html  → Error page (not the actual file)
+Content-Type: application/octet-stream  → Actual file download
+```
+
+Common error scenarios detected via HTML response body:
+- **Early Access**: Model requires Supporter membership
+- **Login Required**: Creator has restricted downloads to logged-in users
+- **Not Found**: Model or version doesn't exist
+- **Age Verification**: NSFW content requires verified account

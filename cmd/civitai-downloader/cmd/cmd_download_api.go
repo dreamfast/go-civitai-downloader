@@ -914,8 +914,8 @@ func CreateDownloadQueryParams(cfg *models.Config) models.QueryParameters {
 func fetchAndProcessModels(apiClient *api.Client, db *database.DB, queryParams models.QueryParameters, cfg *models.Config) ([]potentialDownload, error) {
 
 	// Setup image downloader (needed for all-versions case inside fetchModelsPaginated)
-	// Pass the correct arguments: http client and api key
-	imageDownloader := downloader.NewDownloader(apiClient.HttpClient, cfg.APIKey)
+	// Pass the correct arguments: http client, api key, and session cookie
+	imageDownloader := downloader.NewDownloader(apiClient.HttpClient, cfg.APIKey, cfg.SessionCookie)
 
 	// Fetch models - Pass userTotalLimit (cfg.Download.Limit) now
 	allPotentialDownloads, _, err := fetchModelsPaginated(apiClient, db, imageDownloader, queryParams, cfg, cfg.Download.Limit)

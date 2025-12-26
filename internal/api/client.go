@@ -26,6 +26,9 @@ var (
 
 const CivitaiApiBaseUrl = "https://civitai.com/api/v1"
 
+// UserAgent is the browser User-Agent string used for HTTP requests to avoid 401 errors
+const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
 // Client struct for interacting with the Civitai API
 type Client struct {
 	// Pointer first
@@ -141,6 +144,7 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", UserAgent)
 	if c.ApiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
 	}
@@ -212,6 +216,7 @@ func (c *Client) GetModelDetails(modelID int) (models.Model, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", UserAgent)
 	if c.ApiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
 	}
@@ -249,6 +254,7 @@ func (c *Client) GetModelVersionDetails(versionID int) (models.ModelVersion, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", UserAgent)
 	if c.ApiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
 	}
@@ -289,6 +295,7 @@ func (c *Client) GetImages(cursor string, queryParams models.ImageAPIParameters)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", UserAgent)
 	if c.ApiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.ApiKey)
 	}

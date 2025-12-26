@@ -1,9 +1,33 @@
 package models
 
 import (
+	"encoding/json"
 	"net/url"
 	"strconv"
 )
+
+// StringOrStringSlice is a custom type that can unmarshal from either
+// a JSON string or a JSON array of strings. This handles API responses
+// where a field may return either format.
+type StringOrStringSlice []string
+
+// UnmarshalJSON implements json.Unmarshaler for StringOrStringSlice
+func (s *StringOrStringSlice) UnmarshalJSON(data []byte) error {
+	// First try to unmarshal as a string
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		*s = []string{str}
+		return nil
+	}
+
+	// If that fails, try to unmarshal as an array of strings
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return err
+	}
+	*s = arr
+	return nil
+}
 
 type (
 	// Config holds the application's configuration settings.
@@ -14,6 +38,7 @@ type (
 		LogLevel            string         `toml:"LogLevel" json:"LogLevel"`
 		LogFormat           string         `toml:"LogFormat" json:"LogFormat"`
 		APIKey              string         `toml:"ApiKey" json:"ApiKey"`
+		SessionCookie       string         `toml:"SessionCookie" json:"SessionCookie"` // Browser session cookie for login-required downloads
 		Torrent             TorrentConfig  `toml:"Torrent" json:"Torrent"`
 		Download            DownloadConfig `toml:"Download" json:"Download"`
 		Images              ImagesConfig   `toml:"Images" json:"Images"`
@@ -124,21 +149,22 @@ type (
 	}
 
 	Model struct {
-		Meta                  interface{}    `json:"meta"`
-		Creator               Creator        `json:"creator"`
-		Description           string         `json:"description"`
-		Type                  string         `json:"type"`
-		Name                  string         `json:"name"`
-		AllowCommercialUse    []string       `json:"allowCommercialUse"`
-		Tags                  []string       `json:"tags"`
-		ModelVersions         []ModelVersion `json:"modelVersions"`
-		Stats                 Stats          `json:"stats"`
-		ID                    int            `json:"id"`
-		Poi                   bool           `json:"poi"`
-		Nsfw                  bool           `json:"nsfw"`
-		AllowNoCredit         bool           `json:"allowNoCredit"`
-		AllowDerivatives      bool           `json:"allowDerivatives"`
-		AllowDifferentLicense bool           `json:"allowDifferentLicense"`
+		Meta                  interface{}         `json:"meta"`
+		Creator               Creator             `json:"creator"`
+		Description           string              `json:"description"`
+		Type                  string              `json:"type"`
+		Name                  string              `json:"name"`
+		Mode                  *string             `json:"mode"` // Can be null, "Archived", or "TakenDown"
+		AllowCommercialUse    StringOrStringSlice `json:"allowCommercialUse"`
+		Tags                  []string            `json:"tags"`
+		ModelVersions         []ModelVersion      `json:"modelVersions"`
+		Stats                 Stats               `json:"stats"`
+		ID                    int                 `json:"id"`
+		Poi                   bool                `json:"poi"`
+		Nsfw                  bool                `json:"nsfw"`
+		AllowNoCredit         bool                `json:"allowNoCredit"`
+		AllowDerivatives      bool                `json:"allowDerivatives"`
+		AllowDifferentLicense bool                `json:"allowDifferentLicense"`
 	}
 
 	Stats struct {
@@ -166,6 +192,7 @@ type (
 	}
 
 	ModelVersion struct {
+		CreatedAt            string        `json:"createdAt"`
 		PublishedAt          string        `json:"publishedAt"`
 		UpdatedAt            string        `json:"updatedAt"`
 		BaseModel            string        `json:"baseModel"`

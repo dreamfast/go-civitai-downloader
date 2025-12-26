@@ -40,6 +40,53 @@ Civitai is a beast of its own, especially the API. There are some things to note
 * I've tested this fine downloading all WAN Video LORAs, but I can't guarantee it will work for all model categories. So far so good.
 * Sometimes .tmp files are left over, probably due to failed hash or downloads. You can run `clean` to remove them.
 
+## Authentication
+
+### API Key
+
+For most downloads, you only need an API Key. Generate one from your [Civitai Account Settings](https://civitai.com/user/account) and add it to your `config.toml`:
+
+```toml
+ApiKey = "your-api-key-here"
+```
+
+The downloader uses both the `?token=` query parameter and `Authorization: Bearer` header for authentication. The token query parameter is required because Civitai redirects downloads to S3, and HTTP headers are stripped on cross-domain redirects.
+
+### Session Cookie (Login-Required Downloads)
+
+Some models require you to be logged in to download them. These are models where the creator has enabled "require login to download" or models in Early Access (Supporter-only).
+
+For these models, you need to provide your browser session cookie in addition to (or instead of) your API key:
+
+1. **Get your session cookie:**
+   - Log into Civitai in your browser
+   - Open Developer Tools (F12)
+   - Go to **Application** → **Cookies** → `civitai.com`
+   - Find the cookie named `__Secure-civitai-token`
+   - Copy its value
+
+2. **Use via CLI flag:**
+   ```bash
+   ./civitai-downloader download --session-cookie "__Secure-civitai-token=eyJhbGc..." --model-types LORA
+   ```
+
+3. **Or add to config.toml:**
+   ```toml
+   SessionCookie = "__Secure-civitai-token=eyJhbGciOiJkaXIi..."
+   ```
+
+**Note:** Session cookies expire, so you may need to update this periodically.
+
+### Download Error Detection
+
+The downloader detects when you receive an HTML error page instead of a file and provides specific error messages:
+- **"model is in Early Access"** - Requires Civitai Supporter membership
+- **"model requires login"** - Creator has restricted downloads to logged-in users
+- **"model or file not found"** - The model may have been removed
+- **"download restricted"** - Other access restrictions apply
+
+If you see these errors, try adding your session cookie as described above.
+
 ## Building
 
 1.  **Clone the repository:**
@@ -74,6 +121,7 @@ Generally arguments passed into the application will override the config file se
 | Option                  | Type       | Default              | Description                                                                                             |
 | :---------------------- | :--------- | :------------------- | :------------------------------------------------------------------------------------------------------ |
 | `ApiKey`                | `string`   | `""`                 | Your Civitai API Key (Required for downloading models).                                                  |
+| `SessionCookie`         | `string`   | `""`                 | Browser session cookie for login-required downloads (see Authentication section below).                |
 | `SavePath`              | `string`   | `"downloads"`        | Root directory where model subdirectories (like `lora/sdxl_1.0/mymodel/`) will be saved.                 |
 | `DatabasePath`          | `string`   | `""`                 | Path to the database file. If empty, defaults to `[SavePath]/civitai.db`.                        |
 | `Query`                 | `string`   | `""`                 | Default search query string.                                                                            |
@@ -145,6 +193,7 @@ The application is run via the command line.
 *   `--api-timeout int`: Override `ApiClientTimeoutSec` from config (seconds).
 *   `--api-delay int`: Override `ApiDelayMs` from config (milliseconds).
 *   `--db-path string`: Override `DatabasePath` from config.
+*   `--session-cookie string`: Browser session cookie for login-required downloads (see Authentication section).
 
 **Commands:**
 
