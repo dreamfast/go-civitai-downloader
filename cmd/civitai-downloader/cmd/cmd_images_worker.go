@@ -28,6 +28,14 @@ type imageJob struct {
 	ImageID int
 }
 
+// imageMetadataWithURL wraps ImageApiItem with an additional page_url field for Civitai linking.
+type imageMetadataWithURL struct {
+	// Strings first (for field alignment)
+	PageURL string `json:"page_url"`
+	// Embedded struct
+	models.ImageApiItem
+}
+
 // imageDownloadWorker is responsible for fetching full model details for an image,
 // generating a correct path, and downloading the image and its metadata.
 func imageDownloadWorker(
@@ -97,7 +105,14 @@ func imageDownloadWorker(
 		if saveMeta {
 			metaFilename := fmt.Sprintf("%s.json", imageFilename)
 			metaPath := filepath.Join(finalImageDir, metaFilename)
-			metaBytes, err := json.MarshalIndent(job.Metadata, "", "  ")
+
+			// Wrap metadata with page_url field for easy linking to Civitai
+			metaWithURL := imageMetadataWithURL{
+				PageURL:      fmt.Sprintf("https://civitai.com/images/%d", job.ImageID),
+				ImageApiItem: job.Metadata,
+			}
+
+			metaBytes, err := json.MarshalIndent(metaWithURL, "", "  ")
 			if err != nil {
 				log.WithError(err).Errorf("[%s] Failed to marshal metadata for image %d.", logPrefix, job.ImageID)
 				// Don't count this as a full failure, as the image downloaded
