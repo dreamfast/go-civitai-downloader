@@ -234,6 +234,7 @@ type CliImagesFlags struct {
 	PostID         *int    // --post-id
 	ModelID        *int    // --model-id
 	ModelVersionID *int    // --model-version-id
+	ImageID        *int    // --image-id
 	Username       *string // -u
 	Nsfw           *string // --nsfw
 	Sort           *string // -s
@@ -588,6 +589,9 @@ func applyImagesFlags(cfg *models.Config, flags CliFlags) {
 	}
 	if flags.Images.ModelVersionID != nil {
 		cfg.Images.ModelVersionID = *flags.Images.ModelVersionID
+	}
+	if flags.Images.ImageID != nil {
+		cfg.Images.ImageID = *flags.Images.ImageID
 	}
 	if flags.Images.Username != nil {
 		cfg.Images.Username = *flags.Images.Username

@@ -8,6 +8,7 @@ var (
 	imagesPostIDFlag         int
 	imagesModelIDFlag        int
 	imagesModelVersionIDFlag int
+	imagesImageIDFlag        int
 	imagesUsernameFlag       string
 	imagesNsfwFlag           string
 	imagesSortFlag           string
@@ -28,6 +29,7 @@ func init() {
 	imagesCmd.Flags().IntVar(&imagesPostIDFlag, "post-id", 0, "Filter by Post ID.")
 	imagesCmd.Flags().IntVar(&imagesModelIDFlag, "model-id", 0, "Filter by Model ID.")
 	imagesCmd.Flags().IntVar(&imagesModelVersionIDFlag, "model-version-id", 0, "Filter by Model Version ID (overrides model-id and post-id if set).")
+	imagesCmd.Flags().IntVar(&imagesImageIDFlag, "image-id", 0, "Filter by specific Image ID.")
 	imagesCmd.Flags().StringVarP(&imagesUsernameFlag, "username", "u", "", "Filter by username.")
 	// Use string for nsfw flag to handle both boolean and enum values easily
 	imagesCmd.Flags().StringVar(&imagesNsfwFlag, "nsfw", "", "Filter by NSFW level (None, Soft, Mature, X) or boolean (true/false). Empty means all.")

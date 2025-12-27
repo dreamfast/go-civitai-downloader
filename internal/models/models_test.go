@@ -429,3 +429,47 @@ func TestPaginationMetadata_JSON(t *testing.T) {
 		t.Errorf("NextCursor mismatch")
 	}
 }
+
+func TestFlexibleCursor_Unmarshal(t *testing.T) {
+	tests := []struct {
+		name     string
+		json     string
+		expected string
+	}{
+		{
+			name:     "string cursor",
+			json:     `{"nextCursor": "abc123"}`,
+			expected: "abc123",
+		},
+		{
+			name:     "numeric cursor",
+			json:     `{"nextCursor": 36386}`,
+			expected: "36386",
+		},
+		{
+			name:     "large numeric cursor",
+			json:     `{"nextCursor": 1234567890}`,
+			expected: "1234567890",
+		},
+		{
+			name:     "empty string cursor",
+			json:     `{"nextCursor": ""}`,
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result struct {
+				NextCursor FlexibleCursor `json:"nextCursor"`
+			}
+			err := json.Unmarshal([]byte(tt.json), &result)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+			if result.NextCursor.String() != tt.expected {
+				t.Errorf("FlexibleCursor = %q, want %q", result.NextCursor.String(), tt.expected)
+			}
+		})
+	}
+}

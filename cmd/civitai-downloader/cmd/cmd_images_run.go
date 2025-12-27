@@ -106,7 +106,7 @@ func runImages(cmd *cobra.Command, args []string) {
 			break
 		}
 
-		nextCursor = response.Metadata.NextCursor
+		nextCursor = response.Metadata.NextCursor.String()
 		if nextCursor == "" {
 			log.Info("No next cursor found. Finished fetching all available images for the query.")
 			break
@@ -209,6 +209,7 @@ func CreateImageQueryParams(cfg *models.Config) models.ImageAPIParameters {
 	}
 
 	params := models.ImageAPIParameters{
+		ImageID:        cfg.Images.ImageID,
 		ModelID:        cfg.Images.ModelID,
 		ModelVersionID: cfg.Images.ModelVersionID,
 		PostID:         cfg.Images.PostID,
@@ -219,8 +220,8 @@ func CreateImageQueryParams(cfg *models.Config) models.ImageAPIParameters {
 		Nsfw:           cfg.Images.Nsfw,
 	}
 
-	log.Debugf("Created Image API Params: ModelID=%d, ModelVersionID=%d, PostID=%d, Username='%s', Limit=%d, Sort='%s', Period='%s', Nsfw='%s'",
-		params.ModelID, params.ModelVersionID, params.PostID, params.Username, params.Limit, params.Sort, params.Period, params.Nsfw)
+	log.Debugf("Created Image API Params: ImageID=%d, ModelID=%d, ModelVersionID=%d, PostID=%d, Username='%s', Limit=%d, Sort='%s', Period='%s', Nsfw='%s'",
+		params.ImageID, params.ModelID, params.ModelVersionID, params.PostID, params.Username, params.Limit, params.Sort, params.Period, params.Nsfw)
 	return params
 }
 
@@ -300,7 +301,9 @@ func validateAndSetTargetDir(targetDir string, cfg *models.Config) string {
 
 // validatePrimaryFilters validates that at least one primary filter is active
 func validatePrimaryFilters(cfg *models.Config) {
-	if cfg.Images.ModelVersionID != 0 {
+	if cfg.Images.ImageID != 0 {
+		log.Infof("Primary filter: Image ID %d", cfg.Images.ImageID)
+	} else if cfg.Images.ModelVersionID != 0 {
 		log.Infof("Primary filter: Model Version ID %d", cfg.Images.ModelVersionID)
 	} else if cfg.Images.ModelID != 0 {
 		log.Infof("Primary filter: Model ID %d", cfg.Images.ModelID)
@@ -309,6 +312,6 @@ func validatePrimaryFilters(cfg *models.Config) {
 	} else if cfg.Images.Username != "" {
 		log.Infof("Primary filter: Username '%s'", cfg.Images.Username)
 	} else {
-		log.Fatal("No primary filter (model-id, model-version-id, post-id, or username) is active for images command.")
+		log.Fatal("No primary filter (image-id, model-id, model-version-id, post-id, or username) is active for images command.")
 	}
 }

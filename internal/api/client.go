@@ -169,7 +169,7 @@ func (c *Client) GetModels(cursor string, queryParams models.QueryParameters) (s
 		return "", models.ApiResponse{}, fmt.Errorf("error unmarshalling response JSON: %w", err)
 	}
 
-	return response.Metadata.NextCursor, response, nil
+	return response.Metadata.NextCursor.String(), response, nil
 }
 
 // ConvertQueryParamsToURLValues converts the QueryParameters struct into url.Values
@@ -317,7 +317,7 @@ func (c *Client) GetImages(cursor string, queryParams models.ImageAPIParameters)
 		return "", response, fmt.Errorf("error unmarshalling image response JSON: %w", err)
 	}
 
-	return response.Metadata.NextCursor, response, nil
+	return response.Metadata.NextCursor.String(), response, nil
 }
 
 // ConvertImageAPIParamsToURLValues converts the ImageAPIParameters struct into url.Values
@@ -325,6 +325,9 @@ func (c *Client) GetImages(cursor string, queryParams models.ImageAPIParameters)
 func ConvertImageAPIParamsToURLValues(queryParams models.ImageAPIParameters) url.Values {
 	values := url.Values{}
 
+	if queryParams.ImageID != 0 {
+		values.Add("imageId", strconv.Itoa(queryParams.ImageID))
+	}
 	if queryParams.ModelID != 0 {
 		values.Add("modelId", strconv.Itoa(queryParams.ModelID))
 	}

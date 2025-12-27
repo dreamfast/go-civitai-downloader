@@ -182,6 +182,9 @@ func applyImagesFlags(cmd *cobra.Command, flags *config.CliFlags) {
 	if cmd.Flags().Changed("model-version-id") {
 		flags.Images.ModelVersionID = &imagesModelVersionIDFlag
 	}
+	if cmd.Flags().Changed("image-id") {
+		flags.Images.ImageID = &imagesImageIDFlag
+	}
 	if cmd.Flags().Changed("username") {
 		flags.Images.Username = &imagesUsernameFlag
 	}
@@ -309,6 +312,9 @@ func applyImagesFlagsFromGlobals(flags *config.CliFlags) {
 	}
 	if imagesModelVersionIDFlag != 0 {
 		flags.Images.ModelVersionID = &imagesModelVersionIDFlag
+	}
+	if imagesImageIDFlag != 0 {
+		flags.Images.ImageID = &imagesImageIDFlag
 	}
 	if imagesUsernameFlag != "" {
 		flags.Images.Username = &imagesUsernameFlag

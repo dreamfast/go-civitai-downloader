@@ -29,6 +29,44 @@ func (s *StringOrStringSlice) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// FlexibleCursor is a custom type that can unmarshal from either
+// a JSON string or a JSON number. The Civitai API returns cursor
+// as a number for the images endpoint but as a string elsewhere.
+type FlexibleCursor string
+
+// UnmarshalJSON implements json.Unmarshaler for FlexibleCursor
+func (f *FlexibleCursor) UnmarshalJSON(data []byte) error {
+	// First try to unmarshal as a string
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		*f = FlexibleCursor(str)
+		return nil
+	}
+
+	// If that fails, try to unmarshal as a number
+	var num json.Number
+	if err := json.Unmarshal(data, &num); err == nil {
+		*f = FlexibleCursor(num.String())
+		return nil
+	}
+
+	// If both fail, try as raw int64
+	var intVal int64
+	if err := json.Unmarshal(data, &intVal); err == nil {
+		*f = FlexibleCursor(strconv.FormatInt(intVal, 10))
+		return nil
+	}
+
+	// Return empty string if all parsing fails
+	*f = ""
+	return nil
+}
+
+// String returns the cursor as a string
+func (f FlexibleCursor) String() string {
+	return string(f)
+}
+
 type (
 	// Config holds the application's configuration settings.
 	Config struct {
@@ -100,6 +138,7 @@ type (
 		PostID         int `toml:"PostID"`
 		ModelID        int `toml:"ModelID"`
 		ModelVersionID int `toml:"ModelVersionID"`
+		ImageID        int `toml:"ImageID"` // Filter by specific image ID
 		Page           int `toml:"Page"`
 		MaxPages       int `toml:"MaxPages"`
 		Concurrency    int `toml:"Concurrency"`
@@ -273,9 +312,9 @@ type (
 	// Added struct for pagination metadata based on API docs
 	PaginationMetadata struct {
 		// Strings first
-		NextPage   string `json:"nextPage"`
-		PrevPage   string `json:"prevPage"`   // Added based on API docs
-		NextCursor string `json:"nextCursor"` // Added based on API docs (for images endpoint mainly)
+		NextPage   string         `json:"nextPage"`
+		PrevPage   string         `json:"prevPage"`   // Added based on API docs
+		NextCursor FlexibleCursor `json:"nextCursor"` // Can be string or number depending on endpoint
 		// Integers
 		TotalItems  int `json:"totalItems"`
 		CurrentPage int `json:"currentPage"`
@@ -312,6 +351,7 @@ type (
 	ImageApiItem struct {
 		Nsfw           interface{} `json:"nsfw,omitempty"`
 		NsfwLevel      interface{} `json:"nsfwLevel,omitempty"`
+		Meta           interface{} `json:"meta,omitempty"` // Generation metadata (prompt, seed, sampler, etc.)
 		PostID         *int        `json:"postId,omitempty"`
 		URL            string      `json:"url"`
 		Hash           string      `json:"hash"`
@@ -333,6 +373,7 @@ type (
 		Nsfw     string `json:"nsfw,omitempty"`   // API values: "None", "Soft", "Mature", "X", "true", "false". Empty means omit.
 		Cursor   string `json:"cursor,omitempty"`
 		// Integers
+		ImageID        int `json:"imageId,omitempty"`        // Filter by specific image ID
 		ModelID        int `json:"modelId,omitempty"`
 		ModelVersionID int `json:"modelVersionId,omitempty"`
 		PostID         int `json:"postId,omitempty"`
