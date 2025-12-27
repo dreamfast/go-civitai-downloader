@@ -32,8 +32,8 @@ const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, li
 
 // Downloader handles downloading files with progress and hash checks.
 type Downloader struct {
-	client      *http.Client
-	apiKey      string // API key for token-based auth
+	client        *http.Client
+	apiKey        string // API key for token-based auth
 	sessionCookie string // Browser session cookie for login-required downloads
 }
 

@@ -41,7 +41,7 @@ lint:
 
 # Run security scanner
 security:
-	@which gosec > /dev/null || { echo "Installing gosec..."; $(GO) install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest; }
+	@which gosec > /dev/null || { echo "Installing gosec..."; $(GO) install github.com/securego/gosec/v2/cmd/gosec@latest; }
 	@echo "Running security scan..."
 	gosec ./...
 

@@ -16,9 +16,6 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-
-	// "github.com/spf13/viper" // Removed Viper import
 
 	"go-civitai-download/internal/database"
 	"go-civitai-download/internal/helpers"
@@ -105,10 +102,13 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 		}
 		defer db.Close()
 
-		// Retrieve bound flag values using Viper
-		torrentOutputDirEffective := viper.GetString("torrent.outputdir")
-		overwriteTorrentsEffective := viper.GetBool("torrent.overwrite")
-		generateMagnetLinksEffective := viper.GetBool("torrent.magnetlinks")
+		// Retrieve flag values - use command flags with config fallback
+		torrentOutputDirEffective := torrentOutputDir
+		if torrentOutputDirEffective == "" {
+			torrentOutputDirEffective = cfg.Torrent.OutputDir
+		}
+		overwriteTorrentsEffective := overwriteTorrents || cfg.Torrent.Overwrite
+		generateMagnetLinksEffective := generateMagnetLinks || cfg.Torrent.MagnetLinks
 
 		// Map to store model directory paths and associated info (to avoid duplicate jobs)
 		modelDirsToProcess := make(map[string]torrentJob)

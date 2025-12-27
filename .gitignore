@@ -3,7 +3,7 @@
 
 # Log files
 #*.log
-#api.log
+api.log
 
 # OS-specific files
 .DS_Store
@@ -27,3 +27,5 @@ config.toml
 _*.md
 .cursor
 GEMINI.md
+
+*civitai.db*
