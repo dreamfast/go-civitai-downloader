@@ -22,6 +22,7 @@ Check out our current release [here](https://github.com/dreamfast/go-civitai-dow
     *   `db verify`: Check if files recorded in the database exist on disk and optionally verify their hashes. Includes status in log messages.
     *   `db search [QUERY]`: Search database entries by model name, showing **status** and **version ID key**.
     *   `db redownload [VERSION_ID]`: Attempt to redownload a specific file using its **Model Version ID**.
+*   **Delete Command:** Remove downloaded models by model ID, version ID, username, or interactive search. Supports dry-run mode and keeping files while removing database entries.
 *   **Metadata Saving:** Optionally saves a `.json` file containing model/version/file metadata alongside each downloaded file.
 *   **Configuration File:** Uses `config.toml` for persistent settings.
 *   **Command-Line Flags:** Allows overriding most configuration settings via CLI flags.
@@ -353,6 +354,69 @@ Scans the configured download directory (`SavePath`) recursively and removes any
 *   `-m, --magnets`: Also remove any `*-magnet.txt` files found during the scan.
 
 This command is useful for cleaning up leftover temporary files that might occur due to interrupted downloads or other issues, as well as optionally clearing out generated torrent/magnet files.
+
+### `delete`
+
+Removes downloaded models from both the database and disk. Supports deletion by model ID, version ID, username, or interactive search.
+
+```bash
+./civitai-downloader delete [flags]
+```
+
+**`delete` Flags:**
+
+*   `-m, --model-id ints`: Delete all versions of specified model ID(s). Can be repeated or comma-separated.
+*   `-v, --version-id ints`: Delete specific version ID(s). Can be repeated or comma-separated.
+*   `-u, --username string`: Delete all models from a specific creator.
+*   `-s, --search string`: Search by model name and interactively select entries to delete.
+*   `-f, --force`: Skip the confirmation prompt.
+*   `-n, --dry-run`: Show what would be deleted without actually deleting anything.
+*   `--keep-files`: Only remove database entries, keep files on disk.
+
+**Interactive Selection:**
+
+When using `--search`, you'll see a numbered table of matching entries. You can select entries using:
+*   Single numbers: `1`
+*   Multiple numbers: `1,3,5`
+*   Ranges: `1-3`
+*   All entries: `all`
+
+**Examples:**
+
+*   Delete all versions of a model by model ID:
+    ```bash
+    ./civitai-downloader delete --model-id 12345
+    ```
+
+*   Delete specific version(s) by version ID:
+    ```bash
+    ./civitai-downloader delete --version-id 67890,67891
+    ```
+
+*   Delete all models from a specific creator:
+    ```bash
+    ./civitai-downloader delete --username "CreatorName"
+    ```
+
+*   Search and interactively select entries to delete:
+    ```bash
+    ./civitai-downloader delete --search "anime style"
+    ```
+
+*   Preview what would be deleted without making changes:
+    ```bash
+    ./civitai-downloader delete --model-id 12345 --dry-run
+    ```
+
+*   Delete without confirmation prompt:
+    ```bash
+    ./civitai-downloader delete --model-id 12345 --force
+    ```
+
+*   Remove only database entries, keeping files on disk:
+    ```bash
+    ./civitai-downloader delete --version-id 67890 --keep-files
+    ```
 
 ### `torrent`
 
