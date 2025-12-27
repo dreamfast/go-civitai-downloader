@@ -54,6 +54,7 @@ const (
 	DefaultConfigDownloadSaveVersionImages       = false
 	DefaultConfigDownloadSaveModelImages         = false
 	DefaultConfigDownloadDownloadMetaOnly        = false
+	DefaultConfigDownloadMaxImages               = 0 // 0 = unlimited
 	DefaultConfigDownloadPathPattern             = "{{.CreatorName}}/{{.ModelName}}/{{.VersionName}}/{{.Filename}}"
 	DefaultConfigDownloadModelInfoPathPattern    = "{{.CreatorName}}/{{.ModelName}}/model.info.json"
 	DefaultConfigDownloadTrainedWordsPathPattern = "{{.CreatorName}}/{{.ModelName}}/{{.VersionName}}/{{.TrainedWordsFilename}}"
@@ -134,6 +135,7 @@ func setViperDefaults(v *viper.Viper) {
 	v.SetDefault("download.saveversionimages", DefaultConfigDownloadSaveVersionImages)
 	v.SetDefault("download.savemodelimages", DefaultConfigDownloadSaveModelImages)
 	v.SetDefault("download.downloadmetaonly", DefaultConfigDownloadDownloadMetaOnly)
+	v.SetDefault("download.maximages", DefaultConfigDownloadMaxImages)
 	v.SetDefault("download.pathpattern", DefaultConfigDownloadPathPattern)
 	v.SetDefault("download.modelinfopathpattern", DefaultConfigDownloadModelInfoPathPattern)
 	v.SetDefault("download.trainedwordspathpattern", DefaultConfigDownloadTrainedWordsPathPattern)
@@ -211,6 +213,7 @@ type CliDownloadFlags struct {
 	Nsfw                  *bool     // --nsfw
 	Limit                 *int      // -l
 	MaxPages              *int      // -p
+	MaxImages             *int      // --max-images
 	Sort                  *string   // --sort
 	Period                *string   // --period
 	ModelID               *int      // --model-id
@@ -503,6 +506,10 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 	if flags.Download.MaxPages != nil {
 		cfg.Download.MaxPages = *flags.Download.MaxPages
 		log.Debugf("[Initialize] CLI Override: Download.MaxPages = %d", cfg.Download.MaxPages)
+	}
+	if flags.Download.MaxImages != nil {
+		cfg.Download.MaxImages = *flags.Download.MaxImages
+		log.Debugf("[Initialize] CLI Override: Download.MaxImages = %d", cfg.Download.MaxImages)
 	}
 	if flags.Download.Sort != nil {
 		cfg.Download.Sort = *flags.Download.Sort

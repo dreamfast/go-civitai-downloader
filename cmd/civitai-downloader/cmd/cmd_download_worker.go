@@ -168,7 +168,7 @@ func handleModelImages(logPrefix string, pd potentialDownload, finalPath string,
 	}
 
 	log.Infof("%s Downloading %d model images to %s", imgLogPrefix, len(allModelImages), modelImageDir)
-	imgSuccess, imgFail := downloadImages(imgLogPrefix, allModelImages, modelImageDir, imageDownloader, cfg.Download.Concurrency)
+	imgSuccess, imgFail := downloadImages(imgLogPrefix, allModelImages, modelImageDir, imageDownloader, cfg.Download.Concurrency, cfg.Download.MaxImages)
 	log.Infof("%s Finished downloading model images. Success: %d, Failures: %d", imgLogPrefix, imgSuccess, imgFail)
 
 	processedModelImagesLock.Lock()
@@ -317,7 +317,7 @@ func (ctx *WorkerContext) handleVersionImages(pd potentialDownload, finalPath, f
 	}
 
 	log.Infof("%s Downloading %d version images for %s to %s", imgLogPrefix, len(pd.OriginalImages), filepath.Base(finalPath), imageSubDir)
-	imgSuccess, imgFail := downloadImages(imgLogPrefix, pd.OriginalImages, imageSubDir, ctx.ImageDownloader, ctx.Config.Download.Concurrency)
+	imgSuccess, imgFail := downloadImages(imgLogPrefix, pd.OriginalImages, imageSubDir, ctx.ImageDownloader, ctx.Config.Download.Concurrency, ctx.Config.Download.MaxImages)
 	log.Infof("%s Finished downloading version images. Success: %d, Failures: %d", imgLogPrefix, imgSuccess, imgFail)
 }
 

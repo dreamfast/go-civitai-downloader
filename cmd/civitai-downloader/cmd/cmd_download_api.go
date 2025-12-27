@@ -378,6 +378,7 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 						modelImagesDirAbs,
 						imageDownloader,
 						cfg.Download.Concurrency,
+						cfg.Download.MaxImages,
 					)
 					log.Infof("%s Finished model image download for dir %s. Success: %d, Failures: %d",
 						imgLogPrefix, modelImagesDirAbs, imgSuccess, imgFail)

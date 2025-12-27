@@ -113,6 +113,9 @@ func applyDownloadFlags(cmd *cobra.Command, flags *config.CliFlags) {
 	if cmd.Flags().Changed("max-pages") {
 		flags.Download.MaxPages = &downloadMaxPagesFlag
 	}
+	if cmd.Flags().Changed("max-images") {
+		flags.Download.MaxImages = &downloadMaxImagesFlag
+	}
 	if cmd.Flags().Changed("sort") {
 		flags.Download.Sort = &downloadSortFlag
 	}
@@ -244,6 +247,9 @@ func applyDownloadFlagsFromGlobals(flags *config.CliFlags) {
 	}
 	if downloadMaxPagesFlag != -1 {
 		flags.Download.MaxPages = &downloadMaxPagesFlag
+	}
+	if downloadMaxImagesFlag != 0 {
+		flags.Download.MaxImages = &downloadMaxImagesFlag
 	}
 	if downloadSortFlag != "" {
 		flags.Download.Sort = &downloadSortFlag

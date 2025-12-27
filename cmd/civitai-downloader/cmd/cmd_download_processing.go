@@ -156,7 +156,8 @@ func saveModelInfoFile(pd potentialDownload, cfg *models.Config) error {
 }
 
 // downloadImages handles downloading a list of images concurrently to a specified directory.
-func downloadImages(logPrefix string, images []models.ModelImage, targetImageDir string, imageDownloader *downloader.Downloader, numWorkers int) (finalSuccessCount, finalFailCount int) {
+// If maxImages > 0, only the first maxImages images will be downloaded.
+func downloadImages(logPrefix string, images []models.ModelImage, targetImageDir string, imageDownloader *downloader.Downloader, numWorkers int, maxImages int) (finalSuccessCount, finalFailCount int) {
 	if imageDownloader == nil {
 		log.Warnf("[%s] Image downloader is nil, cannot download images.", logPrefix)
 		return 0, len(images) // Count all as failed if downloader doesn't exist
@@ -168,6 +169,12 @@ func downloadImages(logPrefix string, images []models.ModelImage, targetImageDir
 	if numWorkers <= 0 {
 		log.Warnf("[%s] Invalid concurrency level %d for image download, defaulting to 1.", logPrefix, numWorkers)
 		numWorkers = 1
+	}
+
+	// Apply max images limit if specified
+	if maxImages > 0 && len(images) > maxImages {
+		log.Infof("[%s] Limiting images from %d to %d (--max-images)", logPrefix, len(images), maxImages)
+		images = images[:maxImages]
 	}
 
 	log.Infof("[%s] Attempting concurrent download for %d images to %s (Concurrency: %d)", logPrefix, len(images), targetImageDir, numWorkers)

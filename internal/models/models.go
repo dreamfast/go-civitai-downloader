@@ -107,6 +107,7 @@ type (
 		Concurrency    int `toml:"Concurrency"`
 		Limit          int `toml:"Limit"`
 		MaxPages       int `toml:"MaxPages"`
+		MaxImages      int `toml:"MaxImages"` // Maximum images to download per version (0 = unlimited)
 		ModelVersionID int `toml:"ModelVersionID"`
 		ModelID        int `toml:"-"` // Flag only (`--model-id`)
 		// Bools (smallest)
@@ -373,7 +374,7 @@ type (
 		Nsfw     string `json:"nsfw,omitempty"`   // API values: "None", "Soft", "Mature", "X", "true", "false". Empty means omit.
 		Cursor   string `json:"cursor,omitempty"`
 		// Integers
-		ImageID        int `json:"imageId,omitempty"`        // Filter by specific image ID
+		ImageID        int `json:"imageId,omitempty"` // Filter by specific image ID
 		ModelID        int `json:"modelId,omitempty"`
 		ModelVersionID int `json:"modelVersionId,omitempty"`
 		PostID         int `json:"postId,omitempty"`

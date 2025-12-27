@@ -31,6 +31,7 @@ var (
 	downloadNsfwFlag                  bool // Note: Config uses Nsfw, flag name is nsfw
 	downloadLimitFlag                 int
 	downloadMaxPagesFlag              int
+	downloadMaxImagesFlag             int
 	downloadSortFlag                  string
 	downloadPeriodFlag                string
 	downloadModelIDFlag               int
@@ -74,6 +75,7 @@ func init() {
 	downloadCmd.Flags().BoolVar(&downloadNsfwFlag, "nsfw", false, "Include NSFW models (overrides config)") // Default to false as override
 	downloadCmd.Flags().IntVarP(&downloadLimitFlag, "limit", "l", 0, "Total number of models/files to download. 0 means unlimited. If not set, uses config value (defaulting to unlimited if also not in config).")
 	downloadCmd.Flags().IntVarP(&downloadMaxPagesFlag, "max-pages", "p", 0, "Maximum number of API pages to process (0 uses config default, which is 0 for no limit)")
+	downloadCmd.Flags().IntVar(&downloadMaxImagesFlag, "max-images", 0, "Maximum number of images to download per version (0 = unlimited)")
 	downloadCmd.Flags().StringVar(&downloadSortFlag, "sort", "", "Sort order (newest, oldest, highest_rated, etc. - overrides config)")
 	downloadCmd.Flags().StringVar(&downloadPeriodFlag, "period", "", "Time period for sort (Day, Week, Month, Year, AllTime - overrides config)")
 	downloadCmd.Flags().IntVar(&downloadModelIDFlag, "model-id", 0, "Download only a specific model ID")
@@ -214,7 +216,7 @@ func handleMetadataOnlyMode(downloadsToQueue []potentialDownload, cfg *models.Co
 				log.WithError(err).Errorf("[%s] Failed to create directory %s for version images", logPrefix, versionImageDir)
 			} else {
 				log.Infof("[%s] Downloading %d version images to %s", logPrefix, len(pd.FullVersion.Images), versionImageDir)
-				downloadImages(logPrefix, pd.FullVersion.Images, versionImageDir, imageDownloader, cfg.Download.Concurrency)
+				downloadImages(logPrefix, pd.FullVersion.Images, versionImageDir, imageDownloader, cfg.Download.Concurrency, cfg.Download.MaxImages)
 				// Note: We are not tracking success/failure counts from downloadImages here for simplicity in meta-only mode.
 			}
 		}
@@ -241,7 +243,7 @@ func handleMetadataOnlyMode(downloadsToQueue []potentialDownload, cfg *models.Co
 					log.WithError(err).Errorf("[%s] Failed to create directory %s for model images", logPrefix, modelImageDir)
 				} else {
 					log.Infof("[%s] Downloading %d model images to %s", logPrefix, len(allModelImages), modelImageDir)
-					downloadImages(logPrefix, allModelImages, modelImageDir, imageDownloader, cfg.Download.Concurrency)
+					downloadImages(logPrefix, allModelImages, modelImageDir, imageDownloader, cfg.Download.Concurrency, cfg.Download.MaxImages)
 					processedModelImages[pd.ModelID] = true // Mark model as processed
 					// Note: We are not tracking success/failure counts from downloadImages here.
 				}
