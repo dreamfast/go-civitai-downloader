@@ -481,6 +481,13 @@ func validateDownloadConfig(cmd *cobra.Command) (*models.Config, error) {
 		cfg.Download.Limit = limitVal
 	}
 
+	// Update MaxPages based on flag
+	if cmd.Flags().Changed("max-pages") {
+		maxPagesVal, _ := cmd.Flags().GetInt("max-pages")
+		log.Infof("Overriding max pages with flag value: %d (0 means unlimited)", maxPagesVal)
+		cfg.Download.MaxPages = maxPagesVal
+	}
+
 	return &cfg, nil
 }
 
