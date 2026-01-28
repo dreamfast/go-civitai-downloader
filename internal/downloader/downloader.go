@@ -265,17 +265,22 @@ func detectMimeAndRename(tempFilePath, finalPath string) (string, error) {
 		log.WithError(err).Errorf("Failed to re-open temp file %s for MIME detection", tempFilePath)
 		return "", fmt.Errorf("%w: opening temp file for mime detection: %w", ErrFileSystem, err)
 	}
-	defer fileForDetect.Close()
 
 	buffer := make([]byte, 512)
 	n, err := fileForDetect.Read(buffer)
 	if err != nil && err != io.EOF {
+		fileForDetect.Close()
 		log.WithError(err).Errorf("Failed to read from temp file %s for MIME detection", tempFilePath)
 		return "", fmt.Errorf("%w: reading temp file for mime detection: %w", ErrFileSystem, err)
 	}
 
 	mimeType := http.DetectContentType(buffer[:n])
 	log.Debugf("Detected MIME type for %s: %s", tempFilePath, mimeType)
+
+	// Close the file before renaming - required on Windows where open handles block rename
+	if err := fileForDetect.Close(); err != nil {
+		log.WithError(err).Warnf("Failed to close temp file %s before rename", tempFilePath)
+	}
 
 	// Get correct extension based on MIME type
 	finalDir := filepath.Dir(finalPath)
