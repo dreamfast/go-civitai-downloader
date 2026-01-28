@@ -13,8 +13,8 @@ import (
 
 	"go-civitai-download/internal/models"
 
-	_ "github.com/mattn/go-sqlite3"
 	log "github.com/sirupsen/logrus"
+	_ "modernc.org/sqlite"
 )
 
 // ErrNotFound is returned when a key is not found in the database.
@@ -39,7 +39,7 @@ func Open(path string) (*DB, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_journal_mode=WAL")
+	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database at %s: %w", path, err)
 	}
