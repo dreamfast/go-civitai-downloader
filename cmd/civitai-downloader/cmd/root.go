@@ -350,9 +350,14 @@ func applyImagesFlagsFromGlobals(flags *config.CliFlags) {
 
 // applyPersistentFlags applies persistent flags to the CliFlags structure
 func applyPersistentFlags(cmd *cobra.Command, flags *config.CliFlags) {
-	if cmd.PersistentFlags().Changed("config") {
-		flags.ConfigFilePath = &cfgFile
-	}
+	// Always pass cfgFile to config initialization. The cfgFile variable is bound via StringVar
+	// and will contain the user-provided value (or the default "config.toml").
+	// We pass it unconditionally because:
+	// 1. The previous check cmd.PersistentFlags().Changed("config") was incorrect - it checked the
+	//    subcommand's persistent flags, not rootCmd's where --config is defined.
+	// 2. Using rootCmd.PersistentFlags().Changed() would create an init cycle.
+	// 3. cfgFile already has the correct value from Cobra's flag parsing.
+	flags.ConfigFilePath = &cfgFile
 
 	if logLevelFlagValue != "info" {
 		flags.LogLevel = &logLevelFlagValue
