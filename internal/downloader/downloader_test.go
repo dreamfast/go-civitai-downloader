@@ -346,6 +346,83 @@ func TestDownloadFile_FileNaming(t *testing.T) {
 	}
 }
 
+// TestDownloadImage_MimeDetection tests that DownloadImage detects the actual
+// MIME type and renames the file with the correct extension.
+func TestDownloadImage_MimeDetection(t *testing.T) {
+	// PNG magic bytes (first 8 bytes of a PNG file)
+	pngMagic := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	// Add some padding to make it look like a real file
+	pngData := append(pngMagic, []byte("PNG DATA HERE")...)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(pngData)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "", "")
+
+	// Pass a URL that ends in .jpeg (like Civitai does) but serves PNG content
+	imageURL := server.URL + "/test_image.jpeg"
+	filename, err := downloader.DownloadImage(tempDir, imageURL)
+	if err != nil {
+		t.Fatalf("DownloadImage failed: %v", err)
+	}
+
+	// The filename should be corrected to .png based on MIME detection
+	if !strings.HasSuffix(filename, ".png") {
+		t.Errorf("Expected filename to end with .png (MIME-detected), got: %s", filename)
+	}
+
+	// Verify the file exists
+	finalPath := filepath.Join(tempDir, filename)
+	if _, err := os.Stat(finalPath); os.IsNotExist(err) {
+		t.Errorf("File does not exist at expected path: %s", finalPath)
+	}
+}
+
+// TestDownloadImage_HtmlResponse tests that DownloadImage rejects HTML responses.
+func TestDownloadImage_HtmlResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("<html><body>Error</body></html>"))
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "", "")
+
+	imageURL := server.URL + "/test_image.jpeg"
+	_, err := downloader.DownloadImage(tempDir, imageURL)
+	if err == nil {
+		t.Error("Expected error for HTML response, got nil")
+	}
+}
+
+// TestDownloadImage_FallbackOnMimeFailure tests fallback when MIME detection fails.
+func TestDownloadImage_FallbackOnMimeFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write([]byte("some binary data"))
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "", "")
+
+	imageURL := server.URL + "/test_image.jpeg"
+	filename, err := downloader.DownloadImage(tempDir, imageURL)
+	if err != nil {
+		t.Fatalf("DownloadImage failed: %v", err)
+	}
+
+	// Should fall back to original extension when MIME is unknown
+	if !strings.HasSuffix(filename, ".jpeg") {
+		t.Errorf("Expected fallback to .jpeg extension, got: %s", filename)
+	}
+}
+
 // Benchmark test for download performance
 func BenchmarkDownloadFile(b *testing.B) {
 	// Create test data

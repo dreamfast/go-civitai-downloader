@@ -454,7 +454,8 @@ func (d *Downloader) DownloadFile(targetFilepath string, url string, hashes mode
 }
 
 // DownloadImage downloads an image from a URL to a specified directory.
-// It determines the filename from the URL path.
+// It determines the filename from the URL path, detects the actual MIME type,
+// and renames the file with the correct extension.
 // Returns the final filename (not the full path) and an error if one occurred.
 func (d *Downloader) DownloadImage(targetDir string, imageURL string) (string, error) {
 	// Add token as query parameter if API key is set
@@ -502,22 +503,62 @@ func (d *Downloader) DownloadImage(targetDir string, imageURL string) (string, e
 		baseName = "unknown_image" // Fallback filename
 	}
 
+	// Check for HTML error pages (Civitai sometimes returns 200 with HTML)
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "text/html") {
+		bodyPreview := make([]byte, 512)
+		n, _ := resp.Body.Read(bodyPreview)
+		bodyStr := string(bodyPreview[:n])
+		log.Errorf("Received HTML response instead of image for %s. Body preview: %s", imageURL, bodyStr)
+		return "", fmt.Errorf("%w: received HTML instead of image from %s", ErrHttpStatus, imageURL)
+	}
+
+	// Ensure target directory exists
+	if err := os.MkdirAll(targetDir, 0750); err != nil {
+		return "", fmt.Errorf("%w: creating target directory %s: %w", ErrFileSystem, targetDir, err)
+	}
+
+	// Create temporary file
+	tempFile, err := os.CreateTemp(targetDir, baseName+".*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("%w: creating temporary file for image %s: %w", ErrFileSystem, baseName, err)
+	}
+
+	shouldCleanupTemp := true
+	defer func() {
+		if shouldCleanupTemp {
+			log.Debugf("Cleaning up temporary image file via defer: %s", tempFile.Name())
+			if removeErr := os.Remove(tempFile.Name()); removeErr != nil {
+				log.WithError(removeErr).Warnf("Failed to remove temporary image file %s during defer cleanup", tempFile.Name())
+			}
+		}
+	}()
+
+	// Copy the response body to the temp file
+	_, err = io.Copy(tempFile, resp.Body)
+	if err != nil {
+		_ = tempFile.Close()
+		return "", fmt.Errorf("writing to temporary image file %s: %w", tempFile.Name(), err)
+	}
+
+	if err := tempFile.Close(); err != nil {
+		return "", fmt.Errorf("%w: closing temporary image file %s: %w", ErrFileSystem, tempFile.Name(), err)
+	}
+
 	finalPath := filepath.Join(targetDir, baseName)
 
-	// Create the destination file
-	outFile, err := os.Create(finalPath)
+	// Detect MIME type and rename with correct extension
+	correctedPath, err := detectMimeAndRename(tempFile.Name(), finalPath)
 	if err != nil {
-		return "", fmt.Errorf("%w: creating image file %s: %w", ErrFileSystem, finalPath, err)
-	}
-	defer outFile.Close()
-
-	// Copy the response body to the file
-	_, err = io.Copy(outFile, resp.Body)
-	if err != nil {
-		// Attempt to remove the partial file on error
-		_ = os.Remove(finalPath)
-		return "", fmt.Errorf("writing to image file %s: %w", finalPath, err)
+		log.WithError(err).Warnf("MIME detection/rename failed for image %s. Falling back to URL-derived filename.", imageURL)
+		// Fallback: move temp file to original path
+		if renameErr := os.Rename(tempFile.Name(), finalPath); renameErr != nil {
+			return "", fmt.Errorf("%w: fallback rename failed for %s: %w", ErrFileSystem, finalPath, renameErr)
+		}
+		shouldCleanupTemp = false
+		return baseName, nil
 	}
 
-	return baseName, nil
+	shouldCleanupTemp = false
+	return filepath.Base(correctedPath), nil
 }
