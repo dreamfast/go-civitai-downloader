@@ -579,9 +579,22 @@ func TestRealDownload_SmallModel(t *testing.T) {
 	defer os.Remove(binaryPath)
 
 	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	// Create a minimal config with a temp database path to avoid
+	// interference from previous test runs
+	configFile := filepath.Join(tempDir, "test_config.toml")
+	configContent := fmt.Sprintf(`
+SavePath = "%s"
+ApiKey = "%s"
+DatabasePath = "%s"
+`, tempDir, apiKey, dbPath)
+	if err := os.WriteFile(configFile, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
 
 	output, err := runCLIWithTimeout(t, binaryPath, []string{
-		"--save-path", tempDir,
+		"--config", configFile,
 		"download",
 		"--model-version-id", "9208",
 		"--yes",
@@ -743,6 +756,9 @@ SkipConfirmation = true
 		if strings.Contains(output, "429") {
 			t.Skip("Skipping: API rate limited")
 		}
+		if strings.Contains(output, "500") || strings.Contains(output, "Server error") {
+			t.Skip("Skipping: Civitai API server error (500)")
+		}
 		t.Logf("Output: %s", output)
 		t.Fatalf("Images command failed: %v", err)
 	}
@@ -842,6 +858,9 @@ SkipConfirmation = true
 		}
 		if strings.Contains(output, "429") {
 			t.Skip("Skipping: API rate limited")
+		}
+		if strings.Contains(output, "500") || strings.Contains(output, "Server error") {
+			t.Skip("Skipping: Civitai API server error (500)")
 		}
 		t.Logf("Output: %s", output)
 		t.Fatalf("Images command failed: %v", err)
