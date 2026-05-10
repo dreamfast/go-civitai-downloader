@@ -109,6 +109,10 @@ release-cross: clean
 	@echo "Cross-platform release archives created:"
 	@ls -la release/
 
+# Automated release: build, tag, and publish via GitHub CLI
+release-auto:
+	@./scripts/release.sh $(ARGS)
+
 # Show help message
 help:
 	@echo "Available targets:"
@@ -127,15 +131,18 @@ help:
 	@echo "  clean           - Clean build artifacts"
 	@echo "  release         - Build native release binary for current platform"
 	@echo "  release-cross   - Build all platforms (Linux, macOS, Windows)"
+	@echo "  release-auto    - Automated release: build, tag, and publish to GitHub"
 	@echo "  help            - Show this help message"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run ARGS=\"download --help\""
-	@echo "  make check        # Quick quality checks"
-	@echo "  make release-cross # Build for all platforms"
+	@echo "  make check          # Quick quality checks"
+	@echo "  make release-cross  # Build for all platforms"
+	@echo "  make release-auto   # Full automated release (auto-bump patch version)"
+	@echo "  make release-auto ARGS=\"v1.2.3\"  # Release specific version"
 
 # Default target
 all: build
 
 # Phony targets (targets that don't represent files)
-.PHONY: all build run test test-integration test-short lint security fmt vet tidy check ci clean release release-cross help 
+.PHONY: all build run test test-integration test-short lint security fmt vet tidy check ci clean release release-cross release-auto help 
