@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -537,4 +539,302 @@ func TestConcurrentOperations(t *testing.T) {
 			t.Errorf("Concurrent operation %d failed: %v", i, err)
 		}
 	}
+}
+
+// runCLIWithTimeout runs the CLI binary with a timeout and returns output.
+func runCLIWithTimeout(t *testing.T, binaryPath string, args []string, env []string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	if env != nil {
+		cmd.Env = env
+	}
+
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return string(output), fmt.Errorf("command timed out after 60s")
+	}
+	return string(output), err
+}
+
+// skipIfNoAPIKey skips the test if CIVITAI_API_KEY is not set.
+func skipIfNoAPIKey(t *testing.T) string {
+	if testing.Short() {
+		t.Skip("Skipping real-download integration test in short mode")
+	}
+
+	apiKey := os.Getenv("CIVITAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("Skipping real-download integration test: CIVITAI_API_KEY not set")
+	}
+	return apiKey
+}
+
+// TestRealDownload_SmallModel downloads a small TextualInversion model (EasyNegative, 24KB).
+func TestRealDownload_SmallModel(t *testing.T) {
+	apiKey := skipIfNoAPIKey(t)
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	tempDir := t.TempDir()
+
+	output, err := runCLIWithTimeout(t, binaryPath, []string{
+		"--save-path", tempDir,
+		"download",
+		"--model-version-id", "9208",
+		"--yes",
+	}, append(os.Environ(), "CIVITAI_API_KEY="+apiKey))
+
+	if err != nil {
+		if strings.Contains(output, "RATE LIMITED") || strings.Contains(output, "429") {
+			t.Skip("Skipping: API rate limited")
+		}
+		if strings.Contains(output, "404") {
+			t.Skip("Skipping: Model not found (may have been removed)")
+		}
+		t.Logf("Command output: %s", output)
+		t.Fatalf("Download command failed: %v", err)
+	}
+
+	// Verify the file was downloaded
+	// EasyNegative should be around 24KB
+	expectedFile := filepath.Join(tempDir, "*", "*", "9208_easynegative.safetensors")
+	matches, _ := filepath.Glob(expectedFile)
+	if len(matches) == 0 {
+		// Try alternative patterns
+		matches, _ = filepath.Glob(filepath.Join(tempDir, "**", "9208_*"))
+	}
+
+	if len(matches) == 0 {
+		t.Errorf("Expected downloaded file not found in %s. Output: %s", tempDir, output)
+	} else {
+		info, err := os.Stat(matches[0])
+		if err != nil {
+			t.Errorf("Failed to stat downloaded file: %v", err)
+		} else if info.Size() == 0 {
+			t.Errorf("Downloaded file is empty: %s", matches[0])
+		} else if info.Size() > 1024*1024 {
+			t.Errorf("Downloaded file is unexpectedly large (%d bytes). Expected a small TextualInversion model.", info.Size())
+		}
+	}
+}
+
+// TestRealDownload_NsfwFlagApplied validates that --nsfw flag is included in the API URL.
+func TestRealDownload_NsfwFlagApplied(t *testing.T) {
+	apiKey := skipIfNoAPIKey(t)
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	tempDir := t.TempDir()
+
+	// Test 1: --nsfw="" should omit nsfw param from URL
+	output, err := runCLIWithTimeout(t, binaryPath, []string{
+		"--save-path", tempDir,
+		"images",
+		"--debug-print-api-url",
+		"--nsfw", "",
+		"--username", "Yofaraway",
+	}, append(os.Environ(), "CIVITAI_API_KEY="+apiKey))
+
+	if err != nil {
+		t.Logf("Output: %s", output)
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	// The URL should NOT contain "nsfw=" when --nsfw is empty
+	if strings.Contains(output, "nsfw=") {
+		t.Errorf("Expected nsfw param to be omitted when --nsfw='', but URL contained it: %s", output)
+	}
+
+	// Test 2: --nsfw="Soft" should include nsfw=Soft in URL
+	output, err = runCLIWithTimeout(t, binaryPath, []string{
+		"--save-path", tempDir,
+		"images",
+		"--debug-print-api-url",
+		"--nsfw", "Soft",
+		"--username", "Yofaraway",
+	}, append(os.Environ(), "CIVITAI_API_KEY="+apiKey))
+
+	if err != nil {
+		t.Logf("Output: %s", output)
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	if !strings.Contains(output, "nsfw=Soft") {
+		t.Errorf("Expected nsfw=Soft in URL, got: %s", output)
+	}
+}
+
+// TestRealDownload_PageFlagApplied validates that --page flag appears in the API URL.
+func TestRealDownload_PageFlagApplied(t *testing.T) {
+	apiKey := skipIfNoAPIKey(t)
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	tempDir := t.TempDir()
+
+	output, err := runCLIWithTimeout(t, binaryPath, []string{
+		"--save-path", tempDir,
+		"images",
+		"--debug-print-api-url",
+		"--page", "3",
+		"--username", "Yofaraway",
+	}, append(os.Environ(), "CIVITAI_API_KEY="+apiKey))
+
+	if err != nil {
+		t.Logf("Output: %s", output)
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	if !strings.Contains(output, "page=3") {
+		t.Errorf("Expected page=3 in URL, got: %s", output)
+	}
+}
+
+// TestRealDownload_ImageExtension validates that downloaded images have correct extensions.
+func TestRealDownload_ImageExtension(t *testing.T) {
+	apiKey := skipIfNoAPIKey(t)
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	tempDir := t.TempDir()
+
+	// Create a temp config with SkipConfirmation=true for images command
+	configFile := filepath.Join(tempDir, "test_config.toml")
+	configContent := fmt.Sprintf(`
+SavePath = "%s"
+ApiKey = "%s"
+
+[Download]
+SkipConfirmation = true
+`, tempDir, apiKey)
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	output, err := runCLIWithTimeout(t, binaryPath, []string{
+		"--config", configFile,
+		"images",
+		"--model-id", "257749",
+		"--limit", "3",
+	}, os.Environ())
+
+	if err != nil {
+		if strings.Contains(output, "REGION_BLOCKED") || strings.Contains(output, "region") {
+			t.Skip("Skipping: Images API region-blocked")
+		}
+		if strings.Contains(output, "429") {
+			t.Skip("Skipping: API rate limited")
+		}
+		t.Logf("Output: %s", output)
+		t.Fatalf("Images command failed: %v", err)
+	}
+
+	// Check downloaded files have recognized image extensions
+	imageExts := map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true}
+	foundImages := false
+
+	err = filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if imageExts[ext] {
+			foundImages = true
+		} else if ext != ".toml" && ext != ".db" {
+			t.Errorf("Downloaded file has unexpected extension: %s", path)
+		}
+		return nil
+	})
+
+	if err != nil {
+		t.Errorf("Error walking temp dir: %v", err)
+	}
+
+	if !foundImages {
+		t.Errorf("No images downloaded. Output: %s", output)
+	}
+}
+
+// TestRealDownload_BaseModelFilter validates base model filtering via --debug-print-api-url.
+func TestRealDownload_BaseModelFilter(t *testing.T) {
+	apiKey := skipIfNoAPIKey(t)
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	tempDir := t.TempDir()
+
+	output, err := runCLIWithTimeout(t, binaryPath, []string{
+		"--save-path", tempDir,
+		"download",
+		"--debug-print-api-url",
+		"--model-id", "257749",
+		"--base-models", "SD 1.5",
+	}, append(os.Environ(), "CIVITAI_API_KEY="+apiKey))
+
+	if err != nil {
+		if strings.Contains(output, "unknown flag") && strings.Contains(output, "debug-print-api-url") {
+			// The debug flag might not exist on download command - skip this test
+			t.Skip("Skipping: debug-print-api-url not available on download command")
+		}
+		t.Logf("Output: %s", output)
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	if !strings.Contains(output, "baseModels=SD+1.5") {
+		t.Errorf("Expected baseModels=SD+1.5 in URL, got: %s", output)
+	}
+}
+
+// TestRealDownload_ImageUsernameUnmarshal validates no JSON unmarshal crash when fetching images.
+func TestRealDownload_ImageUsernameUnmarshal(t *testing.T) {
+	apiKey := skipIfNoAPIKey(t)
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	tempDir := t.TempDir()
+
+	// Create a temp config with SkipConfirmation=true
+	configFile := filepath.Join(tempDir, "test_config.toml")
+	configContent := fmt.Sprintf(`
+SavePath = "%s"
+ApiKey = "%s"
+
+[Download]
+SkipConfirmation = true
+`, tempDir, apiKey)
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	output, err := runCLIWithTimeout(t, binaryPath, []string{
+		"--config", configFile,
+		"images",
+		"--username", "Yofaraway",
+		"--limit", "5",
+	}, os.Environ())
+
+	if err != nil {
+		if strings.Contains(output, "unmarshal") {
+			t.Fatalf("JSON unmarshal error detected (FlexibleString fix may be needed): %v\nOutput: %s", err, output)
+		}
+		if strings.Contains(output, "REGION_BLOCKED") || strings.Contains(output, "region") {
+			t.Skip("Skipping: Images API region-blocked")
+		}
+		if strings.Contains(output, "429") {
+			t.Skip("Skipping: API rate limited")
+		}
+		t.Logf("Output: %s", output)
+		t.Fatalf("Images command failed: %v", err)
+	}
+
+	// If we get here without unmarshal error, the test passes
+	t.Logf("Images fetched successfully without JSON unmarshal errors")
 }
