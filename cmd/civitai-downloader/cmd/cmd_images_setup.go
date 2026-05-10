@@ -35,7 +35,7 @@ func init() {
 	imagesCmd.Flags().StringVar(&imagesNsfwFlag, "nsfw", "", "Filter by NSFW level (None, Soft, Mature, X) or boolean (true/false). Empty means all.")
 	imagesCmd.Flags().StringVarP(&imagesSortFlag, "sort", "s", "Newest", "Sort order (Most Reactions, Most Comments, Newest).")
 	imagesCmd.Flags().StringVarP(&imagesPeriodFlag, "period", "p", "AllTime", "Time period for sorting (AllTime, Year, Month, Week, Day).")
-	imagesCmd.Flags().IntVar(&imagesPageFlag, "page", 1, "Starting page number (API defaults to 1).") // API uses page-based for images
+	imagesCmd.Flags().IntVar(&imagesPageFlag, "page", 1, "Starting page number (uses cursor-advance for images API).") // Images API uses cursor-based pagination; Page config triggers cursor-advance
 	imagesCmd.Flags().IntVar(&imagesMaxPagesFlag, "max-pages", 0, "Maximum number of API pages to fetch (0 for no limit)")
 	imagesCmd.Flags().StringVarP(&imagesOutputDirFlag, "output-dir", "o", "", "Directory to save images (default: [SavePath]/images).")
 	// Link to package-level variable

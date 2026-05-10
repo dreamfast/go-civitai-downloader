@@ -203,6 +203,9 @@ func applyImagesFlags(cmd *cobra.Command, flags *config.CliFlags) {
 	if cmd.Flags().Changed("max-pages") {
 		flags.Images.MaxPages = &imagesMaxPagesFlag
 	}
+	if cmd.Flags().Changed("page") {
+		flags.Images.Page = &imagesPageFlag
+	}
 	if cmd.Flags().Changed("output-dir") {
 		flags.Images.OutputDir = &imagesOutputDirFlag
 	}
@@ -336,6 +339,9 @@ func applyImagesFlagsFromGlobals(flags *config.CliFlags) {
 	}
 	if imagesMaxPagesFlag != -1 {
 		flags.Images.MaxPages = &imagesMaxPagesFlag
+	}
+	if imagesPageFlag > 1 {
+		flags.Images.Page = &imagesPageFlag
 	}
 	if imagesOutputDirFlag != "" {
 		flags.Images.OutputDir = &imagesOutputDirFlag

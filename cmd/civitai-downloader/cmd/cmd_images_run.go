@@ -74,6 +74,67 @@ func runImages(cmd *cobra.Command, args []string) {
 	var nextCursor string
 	var loopErr error
 
+	// --- Cursor-advance for Page > 1 --- START ---
+	if cfg.Images.Page > 1 {
+		if cfg.Images.Page > 50 {
+			log.Warnf("Page %d exceeds maximum allowed (50). Capping to 50.", cfg.Images.Page)
+			cfg.Images.Page = 50
+		}
+		if cfg.Images.Page > 10 {
+			log.Warnf("Page %d may trigger rate limiting due to %d cursor-advance API calls.", cfg.Images.Page, cfg.Images.Page-1)
+		}
+
+		skipCount := cfg.Images.Page - 1
+		log.Infof("Skipping to page %d: advancing cursor through %d pages...", cfg.Images.Page, skipCount)
+
+		skipCursor := ""
+		for i := 0; i < skipCount; i++ {
+			if maxPages > 0 && (i+1) > maxPages {
+				log.Warnf("--page %d with --max-pages %d: skip consumes all allowed pages. No images will be fetched.", cfg.Images.Page, maxPages)
+				loopErr = fmt.Errorf("page skip (%d) exceeds max-pages limit (%d)", cfg.Images.Page, maxPages)
+				break
+			}
+
+			skipParams := initialApiParams
+			if skipCursor != "" {
+				skipParams.Cursor = skipCursor
+			}
+
+			_, skipResp, skipErr := apiClient.GetImages(skipCursor, skipParams)
+			if skipErr != nil {
+				loopErr = fmt.Errorf("failed to advance cursor to page %d: %w", i+2, skipErr)
+				break
+			}
+
+			if len(skipResp.Items) == 0 {
+				log.Infof("No more images available during cursor advance. Stopping at effective page %d.", i+1)
+				break
+			}
+
+			skipCursor = skipResp.Metadata.NextCursor.String()
+			if skipCursor == "" {
+				log.Info("No next cursor during advance. End of results reached before target page.")
+				break
+			}
+
+			pageCount++ // Count skipped pages against maxPages
+			log.Debugf("Cursor advanced: page %d/%d skipped. Next cursor: %s", i+1, skipCount, skipCursor)
+
+			if cfg.APIDelayMs > 0 {
+				time.Sleep(time.Duration(cfg.APIDelayMs) * time.Millisecond)
+			}
+		}
+
+		nextCursor = skipCursor
+		log.Infof("Cursor advance complete. Starting download from page %d (cursor: %s).", cfg.Images.Page, nextCursor)
+	}
+	// --- Cursor-advance for Page > 1 --- END ---
+
+	if loopErr != nil {
+		log.WithError(loopErr).Error("Cursor advance failed. No images will be fetched.")
+		return
+	}
+
 	log.Info("--- Starting Image Fetching ---")
 	for {
 		pageCount++
