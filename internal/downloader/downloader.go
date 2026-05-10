@@ -304,6 +304,18 @@ func detectMimeAndRename(tempFilePath, finalPath string) (string, error) {
 		correctExt = finalExt
 	}
 
+	// Skip rename if the extension is already functionally correct
+	// (e.g., .jpeg and .jpg are the same format)
+	if strings.EqualFold(finalExt, correctExt) || (strings.EqualFold(finalExt, ".jpeg") && strings.EqualFold(correctExt, ".jpg")) || (strings.EqualFold(finalExt, ".jpg") && strings.EqualFold(correctExt, ".jpeg")) {
+		log.Debugf("Extension '%s' is already correct for MIME type '%s'. Skipping rename.", finalExt, mimeType)
+		finalPathWithCorrectExt := filepath.Join(finalDir, finalBaseNameWithoutExt+finalExt)
+		if err := os.Rename(tempFilePath, finalPathWithCorrectExt); err != nil {
+			return "", fmt.Errorf("%w: renaming temporary file %s to %s: %w", ErrFileSystem, tempFilePath, finalPathWithCorrectExt, err)
+		}
+		log.Infof("Successfully renamed temp file to %s", finalPathWithCorrectExt)
+		return finalPathWithCorrectExt, nil
+	}
+
 	finalPathWithCorrectExt := filepath.Join(finalDir, finalBaseNameWithoutExt+correctExt)
 	log.Debugf("Final path with corrected extension based on MIME type: %s", finalPathWithCorrectExt)
 

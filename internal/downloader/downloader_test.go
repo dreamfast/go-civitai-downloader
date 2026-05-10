@@ -382,6 +382,34 @@ func TestDownloadImage_MimeDetection(t *testing.T) {
 	}
 }
 
+// TestDownloadImage_JpegKeepsExtension tests that .jpeg files are not renamed to .jpg
+// when the MIME type matches (JPEG and JPG are the same format).
+func TestDownloadImage_JpegKeepsExtension(t *testing.T) {
+	// JPEG magic bytes (SOI marker + JFIF APP0 marker)
+	jpegData := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Write(jpegData)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "", "")
+
+	// URL ends in .jpeg, content is JPEG
+	imageURL := server.URL + "/test_image.jpeg"
+	filename, err := downloader.DownloadImage(tempDir, imageURL)
+	if err != nil {
+		t.Fatalf("DownloadImage failed: %v", err)
+	}
+
+	// Should keep .jpeg extension, NOT rename to .jpg
+	if !strings.HasSuffix(filename, ".jpeg") {
+		t.Errorf("Expected .jpeg extension to be preserved, got: %s", filename)
+	}
+}
+
 // TestDownloadImage_HtmlResponse tests that DownloadImage rejects HTML responses.
 func TestDownloadImage_HtmlResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
