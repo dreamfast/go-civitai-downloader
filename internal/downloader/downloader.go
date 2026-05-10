@@ -54,7 +54,8 @@ func NewDownloader(client *http.Client, apiKey string, sessionCookie string) *Do
 					req.Header.Set("User-Agent", UserAgent)
 					// Preserve cookies on redirect (important for Civitai auth)
 					if cookie := via[0].Header.Get("Cookie"); cookie != "" {
-						req.Header.Set("Cookie", cookie) //nolint:gosec // G119: cookie preservation on redirect is required for Civitai auth
+						// #nosec G119 -- cookie preservation on redirect is required for Civitai auth
+						req.Header.Set("Cookie", cookie) //nolint:gosec
 					}
 				}
 				return nil
@@ -270,7 +271,8 @@ func downloadToTemp(resp *http.Response, tempFile *os.File, targetPath string) e
 
 // detectMimeAndRename detects MIME type and renames temp file with correct extension
 func detectMimeAndRename(tempFilePath, finalPath string) (string, error) {
-	fileForDetect, err := os.Open(tempFilePath) //nolint:gosec // G304: tempFilePath is from our download logic, not user input
+	// #nosec G304 -- tempFilePath is internal, not user input
+	fileForDetect, err := os.Open(tempFilePath) //nolint:gosec
 	if err != nil {
 		log.WithError(err).Errorf("Failed to re-open temp file %s for MIME detection", tempFilePath)
 		return "", fmt.Errorf("%w: opening temp file for mime detection: %w", ErrFileSystem, err)
