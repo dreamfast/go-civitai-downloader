@@ -604,7 +604,8 @@ func applyImagesFlags(cfg *models.Config, flags CliFlags) {
 		cfg.Images.Username = *flags.Images.Username
 	}
 	if flags.Images.Nsfw != nil {
-		log.Warnf("[Config Init] Skipping Images.Nsfw flag override due to type mismatch (string vs bool). Flag value: %s", *flags.Images.Nsfw)
+		cfg.Images.Nsfw = *flags.Images.Nsfw
+		log.Debugf("[Config Init] CLI Override: Images.Nsfw = '%s'", cfg.Images.Nsfw)
 	}
 	if flags.Images.Sort != nil {
 		cfg.Images.Sort = *flags.Images.Sort
@@ -616,7 +617,8 @@ func applyImagesFlags(cfg *models.Config, flags CliFlags) {
 		cfg.Images.Page = *flags.Images.Page
 	}
 	if flags.Images.MaxPages != nil {
-		log.Warnf("[Config Init] Images flag --max-pages ignored, no corresponding config field.")
+		cfg.Images.MaxPages = *flags.Images.MaxPages
+		log.Debugf("[Config Init] CLI Override: Images.MaxPages = %d", cfg.Images.MaxPages)
 	}
 	if flags.Images.OutputDir != nil {
 		cfg.Images.OutputDir = *flags.Images.OutputDir
