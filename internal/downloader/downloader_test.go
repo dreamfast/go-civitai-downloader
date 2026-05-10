@@ -423,6 +423,42 @@ func TestDownloadImage_FallbackOnMimeFailure(t *testing.T) {
 	}
 }
 
+// TestDownloadImage_MimeDetectionDisabled tests that DownloadImage keeps the original
+// extension when MIME detection is disabled.
+func TestDownloadImage_MimeDetectionDisabled(t *testing.T) {
+	// PNG magic bytes
+	pngMagic := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	pngData := append(pngMagic, []byte("PNG DATA HERE")...)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(pngData)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "", "")
+	downloader.SetDetectImageMimeType(false) // Disable MIME detection
+
+	// Pass a URL that ends in .jpeg but serves PNG content
+	imageURL := server.URL + "/test_image.jpeg"
+	filename, err := downloader.DownloadImage(tempDir, imageURL)
+	if err != nil {
+		t.Fatalf("DownloadImage failed: %v", err)
+	}
+
+	// When disabled, should keep original .jpeg extension despite PNG content
+	if !strings.HasSuffix(filename, ".jpeg") {
+		t.Errorf("Expected filename to keep .jpeg extension when MIME detection disabled, got: %s", filename)
+	}
+
+	// Verify the file exists
+	finalPath := filepath.Join(tempDir, filename)
+	if _, err := os.Stat(finalPath); os.IsNotExist(err) {
+		t.Errorf("File does not exist at expected path: %s", finalPath)
+	}
+}
+
 // Benchmark test for download performance
 func BenchmarkDownloadFile(b *testing.B) {
 	// Create test data

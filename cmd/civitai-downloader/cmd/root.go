@@ -215,6 +215,9 @@ func applyImagesFlags(cmd *cobra.Command, flags *config.CliFlags) {
 	if cmd.Flags().Changed("metadata") {
 		flags.Images.SaveMetadata = &imagesMetadataFlag
 	}
+	if cmd.Flags().Changed("disable-image-mime") {
+		flags.Images.DisableImageMimeType = &imagesDisableImageMimeFlag
+	}
 }
 
 // applyDownloadFlagsFromGlobals applies download flags by checking global variables against their defaults
@@ -351,6 +354,9 @@ func applyImagesFlagsFromGlobals(flags *config.CliFlags) {
 	}
 	if imagesMetadataFlag {
 		flags.Images.SaveMetadata = &imagesMetadataFlag
+	}
+	if imagesDisableImageMimeFlag {
+		flags.Images.DisableImageMimeType = &imagesDisableImageMimeFlag
 	}
 }
 

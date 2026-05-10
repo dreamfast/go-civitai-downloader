@@ -201,6 +201,7 @@ func runImages(cmd *cobra.Command, args []string) {
 		Timeout:   0,
 	}
 	dl := downloader.NewDownloader(downloadHttpClient, cfg.APIKey, cfg.SessionCookie)
+	dl.SetDetectImageMimeType(cfg.Images.DetectImageMimeType)
 
 	finalBaseTargetDir := targetDir
 	log.Infof("Preparing to download images to base directory: %s", finalBaseTargetDir)

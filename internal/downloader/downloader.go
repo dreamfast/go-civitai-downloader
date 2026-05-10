@@ -32,9 +32,10 @@ const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, li
 
 // Downloader handles downloading files with progress and hash checks.
 type Downloader struct {
-	client        *http.Client
-	apiKey        string // API key for token-based auth
-	sessionCookie string // Browser session cookie for login-required downloads
+	client              *http.Client
+	apiKey              string // API key for token-based auth
+	sessionCookie       string // Browser session cookie for login-required downloads
+	detectImageMimeType bool   // Whether to detect actual MIME type for image downloads
 }
 
 // NewDownloader creates a new Downloader instance.
@@ -61,10 +62,19 @@ func NewDownloader(client *http.Client, apiKey string, sessionCookie string) *Do
 		}
 	}
 	return &Downloader{
-		client:        client,
-		apiKey:        apiKey,
-		sessionCookie: sessionCookie,
+		client:              client,
+		apiKey:              apiKey,
+		sessionCookie:       sessionCookie,
+		detectImageMimeType: true, // Enabled by default
 	}
+}
+
+// SetDetectImageMimeType enables or disables MIME type detection for image downloads.
+// When enabled (default), the downloader detects the actual content type and renames
+// files with the correct extension. When disabled, files keep their original URL-derived
+// extension.
+func (d *Downloader) SetDetectImageMimeType(enabled bool) {
+	d.detectImageMimeType = enabled
 }
 
 // Helper function to check for existing file by base name and hash.
@@ -547,18 +557,27 @@ func (d *Downloader) DownloadImage(targetDir string, imageURL string) (string, e
 
 	finalPath := filepath.Join(targetDir, baseName)
 
-	// Detect MIME type and rename with correct extension
-	correctedPath, err := detectMimeAndRename(tempFile.Name(), finalPath)
-	if err != nil {
-		log.WithError(err).Warnf("MIME detection/rename failed for image %s. Falling back to URL-derived filename.", imageURL)
-		// Fallback: move temp file to original path
-		if renameErr := os.Rename(tempFile.Name(), finalPath); renameErr != nil {
-			return "", fmt.Errorf("%w: fallback rename failed for %s: %w", ErrFileSystem, finalPath, renameErr)
+	if d.detectImageMimeType {
+		// Detect MIME type and rename with correct extension
+		correctedPath, err := detectMimeAndRename(tempFile.Name(), finalPath)
+		if err != nil {
+			log.WithError(err).Warnf("MIME detection/rename failed for image %s. Falling back to URL-derived filename.", imageURL)
+			// Fallback: move temp file to original path
+			if renameErr := os.Rename(tempFile.Name(), finalPath); renameErr != nil {
+				return "", fmt.Errorf("%w: fallback rename failed for %s: %w", ErrFileSystem, finalPath, renameErr)
+			}
+			shouldCleanupTemp = false
+			return baseName, nil
 		}
+
 		shouldCleanupTemp = false
-		return baseName, nil
+		return filepath.Base(correctedPath), nil
 	}
 
+	// MIME detection disabled: move temp file to original path
+	if err := os.Rename(tempFile.Name(), finalPath); err != nil {
+		return "", fmt.Errorf("%w: rename failed for %s: %w", ErrFileSystem, finalPath, err)
+	}
 	shouldCleanupTemp = false
-	return filepath.Base(correctedPath), nil
+	return baseName, nil
 }

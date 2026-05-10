@@ -200,7 +200,8 @@ type (
 		MaxPages       int `toml:"MaxPages"`
 		Concurrency    int `toml:"Concurrency"`
 		// Bools
-		SaveMetadata bool `toml:"Metadata"`
+		SaveMetadata        bool `toml:"Metadata"`
+		DetectImageMimeType bool `toml:"DetectImageMimeType"`
 	}
 
 	// TorrentConfig holds settings specific to the 'torrent' command.

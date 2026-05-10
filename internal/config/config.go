@@ -233,20 +233,21 @@ type CliDownloadFlags struct {
 }
 
 type CliImagesFlags struct {
-	Limit          *int    // --limit
-	PostID         *int    // --post-id
-	ModelID        *int    // --model-id
-	ModelVersionID *int    // --model-version-id
-	ImageID        *int    // --image-id
-	Username       *string // -u
-	Nsfw           *string // --nsfw
-	Sort           *string // -s
-	Period         *string // -p
-	Page           *int    // --page
-	MaxPages       *int    // --max-pages
-	OutputDir      *string // -o
-	Concurrency    *int    // -c
-	SaveMetadata   *bool   // --metadata
+	Limit               *int    // --limit
+	PostID              *int    // --post-id
+	ModelID             *int    // --model-id
+	ModelVersionID      *int    // --model-version-id
+	ImageID             *int    // --image-id
+	Username            *string // -u
+	Nsfw                *string // --nsfw
+	Sort                *string // -s
+	Period              *string // -p
+	Page                *int    // --page
+	MaxPages            *int    // --max-pages
+	OutputDir           *string // -o
+	Concurrency          *int  // -c
+	SaveMetadata         *bool // --metadata
+	DisableImageMimeType *bool // --disable-image-mime
 }
 
 type CliTorrentFlags struct {
@@ -304,11 +305,12 @@ func initializeDefaults() models.Config {
 			IgnoreFileNameStrings: []string{},
 		},
 		Images: models.ImagesConfig{
-			Limit:       100,
-			Sort:        "Newest",
-			Period:      "AllTime",
-			Page:        1,
-			Concurrency: 4,
+			Limit:               100,
+			Sort:                "Newest",
+			Period:              "AllTime",
+			Page:                1,
+			Concurrency:         4,
+			DetectImageMimeType: true, // Enabled by default
 		},
 		Torrent: models.TorrentConfig{
 			Concurrency: 4,
@@ -628,6 +630,10 @@ func applyImagesFlags(cfg *models.Config, flags CliFlags) {
 	}
 	if flags.Images.SaveMetadata != nil {
 		cfg.Images.SaveMetadata = *flags.Images.SaveMetadata
+	}
+	if flags.Images.DisableImageMimeType != nil && *flags.Images.DisableImageMimeType {
+		cfg.Images.DetectImageMimeType = false
+		log.Debugf("[Config Init] CLI Override: Images.DetectImageMimeType = false (--disable-image-mime)")
 	}
 }
 
