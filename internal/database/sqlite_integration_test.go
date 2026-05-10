@@ -346,7 +346,7 @@ func createTestDatabaseEntry() models.DatabaseEntry {
 						HeartCount:   45,
 						CommentCount: 8,
 					},
-					Username: "testuser",
+					Username: models.FlexibleString("testuser"),
 				},
 				{
 					ID:        333445,
@@ -362,7 +362,7 @@ func createTestDatabaseEntry() models.DatabaseEntry {
 						HeartCount:   23,
 						CommentCount: 3,
 					},
-					Username: "testuser",
+					Username: models.FlexibleString("testuser"),
 				},
 			},
 		},
