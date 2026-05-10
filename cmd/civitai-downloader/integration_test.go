@@ -600,21 +600,26 @@ func TestRealDownload_SmallModel(t *testing.T) {
 
 	// Verify the file was downloaded
 	// EasyNegative should be around 24KB
-	expectedFile := filepath.Join(tempDir, "*", "*", "9208_easynegative.safetensors")
-	matches, _ := filepath.Glob(expectedFile)
-	if len(matches) == 0 {
-		// Try alternative patterns
-		matches, _ = filepath.Glob(filepath.Join(tempDir, "**", "9208_*"))
-	}
+	var foundPath string
+	_ = filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if strings.Contains(filepath.Base(path), "9208_") && strings.HasSuffix(path, ".safetensors") {
+			foundPath = path
+			return filepath.SkipDir
+		}
+		return nil
+	})
 
-	if len(matches) == 0 {
+	if foundPath == "" {
 		t.Errorf("Expected downloaded file not found in %s. Output: %s", tempDir, output)
 	} else {
-		info, err := os.Stat(matches[0])
+		info, err := os.Stat(foundPath)
 		if err != nil {
 			t.Errorf("Failed to stat downloaded file: %v", err)
 		} else if info.Size() == 0 {
-			t.Errorf("Downloaded file is empty: %s", matches[0])
+			t.Errorf("Downloaded file is empty: %s", foundPath)
 		} else if info.Size() > 1024*1024 {
 			t.Errorf("Downloaded file is unexpectedly large (%d bytes). Expected a small TextualInversion model.", info.Size())
 		}
@@ -668,7 +673,8 @@ func TestRealDownload_NsfwFlagApplied(t *testing.T) {
 	}
 }
 
-// TestRealDownload_PageFlagApplied validates that --page flag appears in the API URL.
+// TestRealDownload_PageFlagApplied validates that --page flag triggers cursor-advance behavior.
+// The images API uses cursor-based pagination, so we verify via log output rather than URL param.
 func TestRealDownload_PageFlagApplied(t *testing.T) {
 	apiKey := skipIfNoAPIKey(t)
 
@@ -690,8 +696,10 @@ func TestRealDownload_PageFlagApplied(t *testing.T) {
 		t.Fatalf("Command failed: %v", err)
 	}
 
-	if !strings.Contains(output, "page=3") {
-		t.Errorf("Expected page=3 in URL, got: %s", output)
+	// The images API uses cursor-based pagination; --page is implemented via cursor-advance.
+	// We verify the advance completed and download starts from page 3.
+	if !strings.Contains(output, "Starting download from page 3") {
+		t.Errorf("Expected 'Starting download from page 3' in output, got: %s", output)
 	}
 }
 
@@ -713,7 +721,7 @@ ApiKey = "%s"
 [Download]
 SkipConfirmation = true
 `, tempDir, apiKey)
-	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configFile, []byte(configContent), 0600); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 
@@ -810,7 +818,7 @@ ApiKey = "%s"
 [Download]
 SkipConfirmation = true
 `, tempDir, apiKey)
-	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configFile, []byte(configContent), 0600); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 

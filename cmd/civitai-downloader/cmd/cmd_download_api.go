@@ -243,15 +243,15 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 	log.Infof("Successfully fetched details for version %d (%s) of model %s (%s)",
 		versionResponse.ID, versionResponse.Name, versionResponse.Model.Name, versionResponse.Model.Type)
 
+	if !passesBaseModelsFilter(versionResponse, cfg) {
+		return make([]potentialDownload, 0), 0, nil
+	}
+
 	potentialDownloadsPage := make([]potentialDownload, 0, len(versionResponse.Files))
 	versionWithoutFilesImages := versionResponse
 	// Clear files and images to reduce database storage size
 	versionWithoutFilesImages.Files = []models.File{}
 	versionWithoutFilesImages.Images = []models.ModelImage{}
-
-	if !passesBaseModelsFilter(versionResponse, cfg) {
-		return potentialDownloadsPage, 0, nil
-	}
 
 	// Create a pseudo-Model struct for path data generation, as we only have version data here
 	pseudoModel := models.Model{
@@ -824,6 +824,8 @@ func processModelVersions(fullModelDetails models.Model, cfg *models.Config, use
 	for _, version := range fullModelDetails.ModelVersions {
 		if !passesBaseModelsFilter(version, cfg) {
 			if !cfg.Download.AllVersions {
+				// When AllVersions is false, we only check the latest version.
+				// If the latest doesn't match the base model filter, skip the entire model.
 				break
 			}
 			continue

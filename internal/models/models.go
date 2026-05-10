@@ -91,13 +91,6 @@ func (f *FlexibleString) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// If both fail, try as raw int64
-	var intVal int64
-	if err := json.Unmarshal(data, &intVal); err == nil {
-		*f = FlexibleString(strconv.FormatInt(intVal, 10))
-		return nil
-	}
-
 	// Return empty string if all parsing fails
 	*f = ""
 	return nil
@@ -120,7 +113,7 @@ func (f *FlexibleString) Scan(value interface{}) error {
 	case []byte:
 		*f = FlexibleString(string(v))
 	default:
-		*f = FlexibleString("" + fmt.Sprintf("%v", v))
+		*f = FlexibleString(fmt.Sprintf("%v", v))
 	}
 	return nil
 }
