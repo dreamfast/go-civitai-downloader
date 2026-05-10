@@ -373,7 +373,7 @@ func TestImageApiItem_JSON(t *testing.T) {
 		URL:            "https://image.civitai.com/test.jpg",
 		Width:          1024,
 		Height:         768,
-		Username:       "artist",
+		Username:       FlexibleString("artist"),
 		BaseModel:      "SDXL 1.0",
 		ModelID:        111,
 		ModelVersionID: 222,
@@ -396,8 +396,8 @@ func TestImageApiItem_JSON(t *testing.T) {
 	if decoded.URL != item.URL {
 		t.Errorf("URL mismatch")
 	}
-	if decoded.Username != item.Username {
-		t.Errorf("Username mismatch")
+	if decoded.Username.String() != item.Username.String() {
+		t.Errorf("Username mismatch: got %q, want %q", decoded.Username.String(), item.Username.String())
 	}
 }
 
@@ -471,5 +471,106 @@ func TestFlexibleCursor_Unmarshal(t *testing.T) {
 				t.Errorf("FlexibleCursor = %q, want %q", result.NextCursor.String(), tt.expected)
 			}
 		})
+	}
+}
+
+func TestFlexibleString_Unmarshal(t *testing.T) {
+	tests := []struct {
+		name     string
+		json     string
+		expected string
+	}{
+		{
+			name:     "string value",
+			json:     `{"username": "artist123"}`,
+			expected: "artist123",
+		},
+		{
+			name:     "numeric value",
+			json:     `{"username": 12345}`,
+			expected: "12345",
+		},
+		{
+			name:     "zero numeric",
+			json:     `{"username": 0}`,
+			expected: "0",
+		},
+		{
+			name:     "null value",
+			json:     `{"username": null}`,
+			expected: "",
+		},
+		{
+			name:     "empty string",
+			json:     `{"username": ""}`,
+			expected: "",
+		},
+		{
+			name:     "large number",
+			json:     `{"username": 9999999999}`,
+			expected: "9999999999",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result struct {
+				Username FlexibleString `json:"username"`
+			}
+			err := json.Unmarshal([]byte(tt.json), &result)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+			if result.Username.String() != tt.expected {
+				t.Errorf("FlexibleString = %q, want %q", result.Username.String(), tt.expected)
+			}
+		})
+	}
+}
+
+func TestFlexibleString_Marshal(t *testing.T) {
+	item := struct {
+		Username FlexibleString `json:"username"`
+	}{
+		Username: FlexibleString("testuser"),
+	}
+
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %v", err)
+	}
+
+	expected := `{"username":"testuser"}`
+	if string(data) != expected {
+		t.Errorf("Marshaled JSON = %q, want %q", string(data), expected)
+	}
+}
+
+func TestFlexibleString_SQLScan(t *testing.T) {
+	var fs FlexibleString
+	if err := fs.Scan("dbuser"); err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+	if fs.String() != "dbuser" {
+		t.Errorf("After Scan = %q, want %q", fs.String(), "dbuser")
+	}
+
+	// Scan nil
+	if err := fs.Scan(nil); err != nil {
+		t.Fatalf("Scan nil failed: %v", err)
+	}
+	if fs.String() != "" {
+		t.Errorf("After Scan nil = %q, want empty string", fs.String())
+	}
+}
+
+func TestFlexibleString_DriverValue(t *testing.T) {
+	fs := FlexibleString("testuser")
+	val, err := fs.Value()
+	if err != nil {
+		t.Fatalf("Value failed: %v", err)
+	}
+	if val != "testuser" {
+		t.Errorf("Value = %q, want %q", val, "testuser")
 	}
 }

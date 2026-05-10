@@ -150,6 +150,7 @@ func setupDownloadEnvironment(cfg *models.Config) (db *database.DB, fileDownload
 			Transport: globalHttpTransport,
 		}
 		imageDownloader = downloader.NewDownloader(imgHttpClient, cfg.APIKey, cfg.SessionCookie)
+		imageDownloader.SetDetectImageMimeType(cfg.Images.DetectImageMimeType)
 	}
 	if imageDownloader != nil {
 		log.Debug("Image downloader initialized successfully.")

@@ -343,7 +343,7 @@ func createRealisticDatabaseEntry() models.DatabaseEntry {
 						HeartCount:   89,
 						CommentCount: 15,
 					},
-					Username: "testuser",
+					Username: models.FlexibleString("testuser"),
 				},
 			},
 		},

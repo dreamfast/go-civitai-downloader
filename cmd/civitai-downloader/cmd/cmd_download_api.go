@@ -243,6 +243,10 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 	log.Infof("Successfully fetched details for version %d (%s) of model %s (%s)",
 		versionResponse.ID, versionResponse.Name, versionResponse.Model.Name, versionResponse.Model.Type)
 
+	if !passesBaseModelsFilter(versionResponse, cfg) {
+		return make([]potentialDownload, 0), 0, nil
+	}
+
 	potentialDownloadsPage := make([]potentialDownload, 0, len(versionResponse.Files))
 	versionWithoutFilesImages := versionResponse
 	// Clear files and images to reduce database storage size
@@ -400,6 +404,10 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 	// Iterate through versions
 	for _, version := range modelResponse.ModelVersions {
 		log.Debugf("    Processing Version: %s (ID: %d)", version.Name, version.ID)
+
+		if !passesBaseModelsFilter(version, cfg) {
+			continue
+		}
 
 		for _, file := range version.Files {
 			// Pass config to filter function
@@ -775,6 +783,29 @@ func shouldSkipModelForBaseModel(model models.Model, cfg *models.Config) bool {
 	return false
 }
 
+// passesBaseModelsFilter checks if a version passes the BaseModels include filter.
+// When BaseModels is empty, all versions pass. When non-empty, only versions whose
+// BaseModel exactly matches (case-insensitive) one of the configured values pass.
+// Versions with empty BaseModel are excluded when any filter is active.
+func passesBaseModelsFilter(version models.ModelVersion, cfg *models.Config) bool {
+	if len(cfg.Download.BaseModels) == 0 {
+		return true // No filter active, allow all
+	}
+
+	if version.BaseModel == "" {
+		log.Debugf("Skipping version %d (%s): BaseModel is empty and BaseModels filter is active.", version.ID, version.Name)
+		return false
+	}
+
+	if helpers.StringSliceContains(cfg.Download.BaseModels, version.BaseModel) {
+		return true
+	}
+
+	log.Infof("Skipping version %d (%s): BaseModel '%s' does not match any configured BaseModels %v.",
+		version.ID, version.Name, version.BaseModel, cfg.Download.BaseModels)
+	return false
+}
+
 // fetchFullModelDetails fetches complete model details from the API
 func fetchFullModelDetails(modelID int, apiClient *api.Client) (models.Model, error) {
 	log.Debugf("Fetching full details for model %d to ensure accurate version data...", modelID)
@@ -791,6 +822,15 @@ func processModelVersions(fullModelDetails models.Model, cfg *models.Config, use
 	var potentialDownloads []potentialDownload
 
 	for _, version := range fullModelDetails.ModelVersions {
+		if !passesBaseModelsFilter(version, cfg) {
+			if !cfg.Download.AllVersions {
+				// When AllVersions is false, we only check the latest version.
+				// If the latest doesn't match the base model filter, skip the entire model.
+				break
+			}
+			continue
+		}
+
 		versionDownloads, reachedLimit := processVersionFiles(fullModelDetails, version, cfg, userTotalLimit, currentDownloadCount+len(potentialDownloads))
 		potentialDownloads = append(potentialDownloads, versionDownloads...)
 

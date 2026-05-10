@@ -32,9 +32,10 @@ const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, li
 
 // Downloader handles downloading files with progress and hash checks.
 type Downloader struct {
-	client        *http.Client
-	apiKey        string // API key for token-based auth
-	sessionCookie string // Browser session cookie for login-required downloads
+	client              *http.Client
+	apiKey              string // API key for token-based auth
+	sessionCookie       string // Browser session cookie for login-required downloads
+	detectImageMimeType bool   // Whether to detect actual MIME type for image downloads
 }
 
 // NewDownloader creates a new Downloader instance.
@@ -61,10 +62,19 @@ func NewDownloader(client *http.Client, apiKey string, sessionCookie string) *Do
 		}
 	}
 	return &Downloader{
-		client:        client,
-		apiKey:        apiKey,
-		sessionCookie: sessionCookie,
+		client:              client,
+		apiKey:              apiKey,
+		sessionCookie:       sessionCookie,
+		detectImageMimeType: true, // Enabled by default
 	}
+}
+
+// SetDetectImageMimeType enables or disables MIME type detection for image downloads.
+// When enabled (default), the downloader detects the actual content type and renames
+// files with the correct extension. When disabled, files keep their original URL-derived
+// extension.
+func (d *Downloader) SetDetectImageMimeType(enabled bool) {
+	d.detectImageMimeType = enabled
 }
 
 // Helper function to check for existing file by base name and hash.
@@ -294,6 +304,18 @@ func detectMimeAndRename(tempFilePath, finalPath string) (string, error) {
 		correctExt = finalExt
 	}
 
+	// Skip rename if the extension is already functionally correct
+	// (e.g., .jpeg and .jpg are the same format)
+	if strings.EqualFold(finalExt, correctExt) || (strings.EqualFold(finalExt, ".jpeg") && strings.EqualFold(correctExt, ".jpg")) || (strings.EqualFold(finalExt, ".jpg") && strings.EqualFold(correctExt, ".jpeg")) {
+		log.Debugf("Extension '%s' is already correct for MIME type '%s'. Skipping rename.", finalExt, mimeType)
+		finalPathWithCorrectExt := filepath.Join(finalDir, finalBaseNameWithoutExt+finalExt)
+		if err := os.Rename(tempFilePath, finalPathWithCorrectExt); err != nil {
+			return "", fmt.Errorf("%w: renaming temporary file %s to %s: %w", ErrFileSystem, tempFilePath, finalPathWithCorrectExt, err)
+		}
+		log.Infof("Successfully renamed temp file to %s", finalPathWithCorrectExt)
+		return finalPathWithCorrectExt, nil
+	}
+
 	finalPathWithCorrectExt := filepath.Join(finalDir, finalBaseNameWithoutExt+correctExt)
 	log.Debugf("Final path with corrected extension based on MIME type: %s", finalPathWithCorrectExt)
 
@@ -454,7 +476,8 @@ func (d *Downloader) DownloadFile(targetFilepath string, url string, hashes mode
 }
 
 // DownloadImage downloads an image from a URL to a specified directory.
-// It determines the filename from the URL path.
+// It determines the filename from the URL path, detects the actual MIME type,
+// and renames the file with the correct extension.
 // Returns the final filename (not the full path) and an error if one occurred.
 func (d *Downloader) DownloadImage(targetDir string, imageURL string) (string, error) {
 	// Add token as query parameter if API key is set
@@ -502,22 +525,71 @@ func (d *Downloader) DownloadImage(targetDir string, imageURL string) (string, e
 		baseName = "unknown_image" // Fallback filename
 	}
 
+	// Check for HTML error pages (Civitai sometimes returns 200 with HTML)
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "text/html") {
+		bodyPreview := make([]byte, 512)
+		n, _ := resp.Body.Read(bodyPreview)
+		bodyStr := string(bodyPreview[:n])
+		log.Errorf("Received HTML response instead of image for %s. Body preview: %s", imageURL, bodyStr)
+		return "", fmt.Errorf("%w: received HTML instead of image from %s", ErrHttpStatus, imageURL)
+	}
+
+	// Ensure target directory exists
+	if err := os.MkdirAll(targetDir, 0750); err != nil {
+		return "", fmt.Errorf("%w: creating target directory %s: %w", ErrFileSystem, targetDir, err)
+	}
+
+	// Create temporary file
+	tempFile, err := os.CreateTemp(targetDir, baseName+".*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("%w: creating temporary file for image %s: %w", ErrFileSystem, baseName, err)
+	}
+
+	shouldCleanupTemp := true
+	defer func() {
+		if shouldCleanupTemp {
+			log.Debugf("Cleaning up temporary image file via defer: %s", tempFile.Name())
+			if removeErr := os.Remove(tempFile.Name()); removeErr != nil {
+				log.WithError(removeErr).Warnf("Failed to remove temporary image file %s during defer cleanup", tempFile.Name())
+			}
+		}
+	}()
+
+	// Copy the response body to the temp file
+	_, err = io.Copy(tempFile, resp.Body)
+	if err != nil {
+		_ = tempFile.Close()
+		return "", fmt.Errorf("writing to temporary image file %s: %w", tempFile.Name(), err)
+	}
+
+	if err := tempFile.Close(); err != nil {
+		return "", fmt.Errorf("%w: closing temporary image file %s: %w", ErrFileSystem, tempFile.Name(), err)
+	}
+
 	finalPath := filepath.Join(targetDir, baseName)
 
-	// Create the destination file
-	outFile, err := os.Create(finalPath)
-	if err != nil {
-		return "", fmt.Errorf("%w: creating image file %s: %w", ErrFileSystem, finalPath, err)
-	}
-	defer outFile.Close()
+	if d.detectImageMimeType {
+		// Detect MIME type and rename with correct extension
+		correctedPath, err := detectMimeAndRename(tempFile.Name(), finalPath)
+		if err != nil {
+			log.WithError(err).Warnf("MIME detection/rename failed for image %s. Falling back to URL-derived filename.", imageURL)
+			// Fallback: move temp file to original path
+			if renameErr := os.Rename(tempFile.Name(), finalPath); renameErr != nil {
+				return "", fmt.Errorf("%w: fallback rename failed for %s: %w", ErrFileSystem, finalPath, renameErr)
+			}
+			shouldCleanupTemp = false
+			return baseName, nil
+		}
 
-	// Copy the response body to the file
-	_, err = io.Copy(outFile, resp.Body)
-	if err != nil {
-		// Attempt to remove the partial file on error
-		_ = os.Remove(finalPath)
-		return "", fmt.Errorf("writing to image file %s: %w", finalPath, err)
+		shouldCleanupTemp = false
+		return filepath.Base(correctedPath), nil
 	}
 
+	// MIME detection disabled: move temp file to original path
+	if err := os.Rename(tempFile.Name(), finalPath); err != nil {
+		return "", fmt.Errorf("%w: rename failed for %s: %w", ErrFileSystem, finalPath, err)
+	}
+	shouldCleanupTemp = false
 	return baseName, nil
 }

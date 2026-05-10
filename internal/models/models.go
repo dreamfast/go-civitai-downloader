@@ -1,7 +1,9 @@
 package models
 
 import (
+	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strconv"
 )
@@ -65,6 +67,60 @@ func (f *FlexibleCursor) UnmarshalJSON(data []byte) error {
 // String returns the cursor as a string
 func (f FlexibleCursor) String() string {
 	return string(f)
+}
+
+// FlexibleString is a custom type that can unmarshal from either
+// a JSON string or a JSON number. The Civitai API sometimes returns
+// numeric values in fields that are normally strings (e.g., username).
+type FlexibleString string
+
+// UnmarshalJSON implements json.Unmarshaler for FlexibleString.
+// It handles string, number, and null inputs.
+func (f *FlexibleString) UnmarshalJSON(data []byte) error {
+	// First try to unmarshal as a string
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		*f = FlexibleString(str)
+		return nil
+	}
+
+	// If that fails, try to unmarshal as a number
+	var num json.Number
+	if err := json.Unmarshal(data, &num); err == nil {
+		*f = FlexibleString(num.String())
+		return nil
+	}
+
+	// Return empty string if all parsing fails
+	*f = ""
+	return nil
+}
+
+// String returns the flexible string as a plain string.
+func (f FlexibleString) String() string {
+	return string(f)
+}
+
+// Scan implements sql.Scanner for database read operations.
+func (f *FlexibleString) Scan(value interface{}) error {
+	if value == nil {
+		*f = ""
+		return nil
+	}
+	switch v := value.(type) {
+	case string:
+		*f = FlexibleString(v)
+	case []byte:
+		*f = FlexibleString(string(v))
+	default:
+		*f = FlexibleString(fmt.Sprintf("%v", v))
+	}
+	return nil
+}
+
+// Value implements driver.Valuer for database write operations.
+func (f FlexibleString) Value() (driver.Value, error) {
+	return string(f), nil
 }
 
 type (
@@ -144,7 +200,8 @@ type (
 		MaxPages       int `toml:"MaxPages"`
 		Concurrency    int `toml:"Concurrency"`
 		// Bools
-		SaveMetadata bool `toml:"Metadata"`
+		SaveMetadata        bool `toml:"Metadata"`
+		DetectImageMimeType bool `toml:"DetectImageMimeType"`
 	}
 
 	// TorrentConfig holds settings specific to the 'torrent' command.
@@ -283,18 +340,18 @@ type (
 	}
 
 	ModelImage struct {
-		NsfwLevel interface{} `json:"nsfwLevel"`
-		Meta      interface{} `json:"meta"`
-		PostID    *int        `json:"postId"`
-		URL       string      `json:"url"`
-		Hash      string      `json:"hash"`
-		CreatedAt string      `json:"createdAt"`
-		Username  string      `json:"username"`
-		Stats     ImageStats  `json:"stats"`
-		ID        int         `json:"id"`
-		Width     int         `json:"width"`
-		Height    int         `json:"height"`
-		Nsfw      bool        `json:"nsfw"`
+		NsfwLevel interface{}    `json:"nsfwLevel"`
+		Meta      interface{}    `json:"meta"`
+		PostID    *int           `json:"postId"`
+		URL       string         `json:"url"`
+		Hash      string         `json:"hash"`
+		CreatedAt string         `json:"createdAt"`
+		Username  FlexibleString `json:"username"`
+		Stats     ImageStats     `json:"stats"`
+		ID        int            `json:"id"`
+		Width     int            `json:"width"`
+		Height    int            `json:"height"`
+		Nsfw      bool           `json:"nsfw"`
 	}
 
 	ImageStats struct {
@@ -350,19 +407,19 @@ type (
 
 	// ImageApiItem represents a single image item specifically from the /api/v1/images response.
 	ImageApiItem struct {
-		Nsfw           interface{} `json:"nsfw,omitempty"`
-		NsfwLevel      interface{} `json:"nsfwLevel,omitempty"`
-		Meta           interface{} `json:"meta,omitempty"` // Generation metadata (prompt, seed, sampler, etc.)
-		PostID         *int        `json:"postId,omitempty"`
-		URL            string      `json:"url"`
-		Hash           string      `json:"hash"`
-		Username       string      `json:"username,omitempty"`
-		BaseModel      string      `json:"baseModel,omitempty"`
-		ID             int         `json:"id"`
-		Width          int         `json:"width"`
-		Height         int         `json:"height"`
-		ModelID        int         `json:"modelId,omitempty"`
-		ModelVersionID int         `json:"modelVersionId,omitempty"`
+		Nsfw           interface{}    `json:"nsfw,omitempty"`
+		NsfwLevel      interface{}    `json:"nsfwLevel,omitempty"`
+		Meta           interface{}    `json:"meta,omitempty"` // Generation metadata (prompt, seed, sampler, etc.)
+		PostID         *int           `json:"postId,omitempty"`
+		URL            string         `json:"url"`
+		Hash           string         `json:"hash"`
+		Username       FlexibleString `json:"username,omitempty"`
+		BaseModel      string         `json:"baseModel,omitempty"`
+		ID             int            `json:"id"`
+		Width          int            `json:"width"`
+		Height         int            `json:"height"`
+		ModelID        int            `json:"modelId,omitempty"`
+		ModelVersionID int            `json:"modelVersionId,omitempty"`
 	}
 
 	// ImageAPIParameters defines the query parameters specific to the /api/v1/images endpoint.

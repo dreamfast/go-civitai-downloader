@@ -61,7 +61,7 @@ func imageDownloadWorker(
 
 		// Step 1: Generate path using simple data from images API (no expensive model API calls)
 		imageData := map[string]string{
-			"username":  job.Metadata.Username,
+			"username":  job.Metadata.Username.String(),
 			"baseModel": job.Metadata.BaseModel,
 			"imageId":   strconv.Itoa(job.ImageID),
 		}

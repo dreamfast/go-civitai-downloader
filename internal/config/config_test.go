@@ -245,3 +245,41 @@ func TestMultipleFlagTypes(t *testing.T) {
 		t.Error("Expected SaveMetadata flag to be false")
 	}
 }
+
+// TestImagesFlagOverrides tests that images-specific CLI flags are properly applied
+func TestImagesFlagOverrides(t *testing.T) {
+	nsfw := "Soft"
+	maxPages := 5
+	page := 3
+	limit := 50
+
+	flags := CliFlags{
+		Images: &CliImagesFlags{
+			Nsfw:     &nsfw,
+			MaxPages: &maxPages,
+			Page:     &page,
+			Limit:    &limit,
+		},
+	}
+
+	cfg, _, err := Initialize(flags)
+	if err != nil {
+		t.Fatalf("Failed to initialize config: %v", err)
+	}
+
+	if cfg.Images.Nsfw != "Soft" {
+		t.Errorf("Expected Images.Nsfw 'Soft' (from flags), got '%s'", cfg.Images.Nsfw)
+	}
+
+	if cfg.Images.MaxPages != 5 {
+		t.Errorf("Expected Images.MaxPages 5 (from flags), got %d", cfg.Images.MaxPages)
+	}
+
+	if cfg.Images.Page != 3 {
+		t.Errorf("Expected Images.Page 3 (from flags), got %d", cfg.Images.Page)
+	}
+
+	if cfg.Images.Limit != 50 {
+		t.Errorf("Expected Images.Limit 50 (from flags), got %d", cfg.Images.Limit)
+	}
+}
