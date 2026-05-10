@@ -110,7 +110,7 @@ func runClean(cmd *cobra.Command, args []string) {
 
 		if shouldRemove {
 			log.Debugf("Found %s file: %s", fileType, path)
-			err := os.Remove(path)
+			err := os.Remove(path) //nolint:gosec // G122: intentional cleanup of temp files
 			if err != nil {
 				if os.IsNotExist(err) {
 					log.Warnf("Attempted to remove %s file %q, but it was already gone.", fileType, path)

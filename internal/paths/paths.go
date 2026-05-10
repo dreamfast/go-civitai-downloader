@@ -9,17 +9,30 @@ import (
 	"go-civitai-download/internal/helpers"
 )
 
+// Path template placeholder constants used for path generation
+const (
+	PlaceholderModelID     = "modelId"
+	PlaceholderModelName   = "modelName"
+	PlaceholderModelType   = "modelType"
+	PlaceholderCreatorName = "creatorName"
+	PlaceholderUsername    = "username"
+	PlaceholderVersionID   = "versionId"
+	PlaceholderVersionName = "versionName"
+	PlaceholderBaseModel   = "baseModel"
+	PlaceholderImageID     = "imageId"
+)
+
 // Define allowed tags using a map for easy lookup
 var allowedTags = map[string]struct{}{
-	"modelId":     {},
-	"modelName":   {},
-	"modelType":   {},
-	"creatorName": {},
-	"username":    {}, // For images API compatibility
-	"versionId":   {},
-	"versionName": {},
-	"baseModel":   {},
-	"imageId":     {}, // For images API compatibility
+	PlaceholderModelID:     {},
+	PlaceholderModelName:   {},
+	PlaceholderModelType:   {},
+	PlaceholderCreatorName: {},
+	PlaceholderUsername:    {}, // For images API compatibility
+	PlaceholderVersionID:   {},
+	PlaceholderVersionName: {},
+	PlaceholderBaseModel:   {},
+	PlaceholderImageID:     {}, // For images API compatibility
 	// Add more tags here if needed in the future
 }
 

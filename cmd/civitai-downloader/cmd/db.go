@@ -104,11 +104,11 @@ func runDbView(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.WithError(err).Fatalf("Failed to open database at %s", globalConfig.DatabasePath)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0) // Adjust padding and alignment
-	fmt.Fprintln(tw, "Model Name\tVersion Name\tFilename\tFolder\tType\tBase Model\tCreator\tStatus\tDB Key (VersionID)")
-	fmt.Fprintln(tw, "----------\t------------\t--------\t------\t----\t----------\t-------\t------\t------------------")
+	_, _ = fmt.Fprintln(tw, "Model Name\tVersion Name\tFilename\tFolder\tType\tBase Model\tCreator\tStatus\tDB Key (VersionID)")
+	_, _ = fmt.Fprintln(tw, "----------\t------------\t--------\t------\t----\t----------\t-------\t------\t------------------")
 
 	count := 0
 	// Use Fold to iterate over key-value pairs
@@ -130,7 +130,7 @@ func runDbView(cmd *cobra.Command, args []string) {
 		// Print table row using the added fields, including Status
 		// Extract version ID from key for display
 		versionIDStr := strings.TrimPrefix(keyStr, "v_")
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 			entry.ModelName, // Use added ModelName
 			entry.Version.Name,
 			entry.Filename,
@@ -169,7 +169,7 @@ func runDbVerify(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Scan database and verify files
 	stats, problemsToAddress := scanDatabaseEntries(db)
@@ -274,18 +274,18 @@ func verifyMainFile(expectedPath string, entry models.DatabaseEntry) (bool, bool
 		// File exists
 		if checkHashFlag {
 			if helpers.CheckHash(expectedPath, entry.File.Hashes) {
-				log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Info("[OK] File exists and hash matches.")
+				log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Info("[OK] File exists and hash matches.") //nolint:goconst
 				return true, true, ""
 			} else {
-				log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Warn("[MISMATCH] File exists but hash mismatch.")
+				log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Warn("[MISMATCH] File exists but hash mismatch.") //nolint:goconst
 				return true, false, "Hash Mismatch"
 			}
 		} else {
-			log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Info("[FOUND] File exists (hash check skipped).")
+			log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Info("[FOUND] File exists (hash check skipped).") //nolint:goconst
 			return true, true, ""
 		}
 	} else if os.IsNotExist(statErr) {
-		log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Error("[MISSING] File not found.")
+		log.WithFields(log.Fields{"path": expectedPath, "status": entry.Status}).Error("[MISSING] File not found.") //nolint:goconst
 		return false, false, "Missing"
 	} else {
 		log.WithError(statErr).Errorf("[ERROR] Could not check file status for %s", expectedPath)
@@ -517,7 +517,7 @@ func runDbRedownload(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.WithError(err).Fatalf("Failed to open database at %s", globalConfig.DatabasePath)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Construct the database key
 	dbKey := fmt.Sprintf("v_%s", versionIDStr)
@@ -596,11 +596,11 @@ func runDbSearch(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.WithError(err).Fatalf("Failed to open database at %s", globalConfig.DatabasePath)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "Model Name\tVersion Name\tFilename\tFolder\tType\tBase Model\tCreator\tStatus\tDB Key (VersionID)")
-	fmt.Fprintln(tw, "----------\t------------\t--------\t------\t----\t----------\t-------\t------\t------------------")
+	_, _ = fmt.Fprintln(tw, "Model Name\tVersion Name\tFilename\tFolder\tType\tBase Model\tCreator\tStatus\tDB Key (VersionID)")
+	_, _ = fmt.Fprintln(tw, "----------\t------------\t--------\t------\t----\t----------\t-------\t------\t------------------")
 
 	matchCount := 0
 	errFold := db.Fold(func(key []byte, value []byte) error {
@@ -622,7 +622,7 @@ func runDbSearch(cmd *cobra.Command, args []string) {
 			matchCount++
 			// Extract version ID from key for display
 			versionIDStr := strings.TrimPrefix(keyStr, "v_")
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 				entry.ModelName,
 				entry.Version.Name,
 				entry.Filename,

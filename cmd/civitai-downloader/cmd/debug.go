@@ -57,7 +57,7 @@ Useful for verifying how settings are merged.`,
 	// PersistentPreRunE: loadGlobalConfig, // Relies on rootCmd's PersistentPreRunE
 	Run: func(cmd *cobra.Command, args []string) {
 		// globalConfig is populated by PersistentPreRunE
-		jsonBytes, err := json.MarshalIndent(globalConfig, "", "  ")
+		jsonBytes, err := json.MarshalIndent(globalConfig, "", "  ") //nolint:gosec // G117: debug command intentionally shows full config
 		if err != nil {
 			log.Fatalf("Failed to marshal global config to JSON: %v", err)
 			os.Exit(1)

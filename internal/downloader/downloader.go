@@ -54,7 +54,7 @@ func NewDownloader(client *http.Client, apiKey string, sessionCookie string) *Do
 					req.Header.Set("User-Agent", UserAgent)
 					// Preserve cookies on redirect (important for Civitai auth)
 					if cookie := via[0].Header.Get("Cookie"); cookie != "" {
-						req.Header.Set("Cookie", cookie)
+						req.Header.Set("Cookie", cookie) //nolint:gosec // G119: cookie preservation on redirect is required for Civitai auth
 					}
 				}
 				return nil
@@ -270,7 +270,7 @@ func downloadToTemp(resp *http.Response, tempFile *os.File, targetPath string) e
 
 // detectMimeAndRename detects MIME type and renames temp file with correct extension
 func detectMimeAndRename(tempFilePath, finalPath string) (string, error) {
-	fileForDetect, err := os.Open(tempFilePath)
+	fileForDetect, err := os.Open(tempFilePath) //nolint:gosec // G304: tempFilePath is from our download logic, not user input
 	if err != nil {
 		log.WithError(err).Errorf("Failed to re-open temp file %s for MIME detection", tempFilePath)
 		return "", fmt.Errorf("%w: opening temp file for mime detection: %w", ErrFileSystem, err)
@@ -279,7 +279,7 @@ func detectMimeAndRename(tempFilePath, finalPath string) (string, error) {
 	buffer := make([]byte, 512)
 	n, err := fileForDetect.Read(buffer)
 	if err != nil && err != io.EOF {
-		fileForDetect.Close()
+		_ = fileForDetect.Close() //nolint:errcheck
 		log.WithError(err).Errorf("Failed to read from temp file %s for MIME detection", tempFilePath)
 		return "", fmt.Errorf("%w: reading temp file for mime detection: %w", ErrFileSystem, err)
 	}
@@ -396,8 +396,7 @@ func (d *Downloader) DownloadFile(targetFilepath string, url string, hashes mode
 		log.WithError(err).Errorf("Error performing download request from %s", url)
 		return "", fmt.Errorf("%w: performing request for %s: %v", ErrHttpRequest, url, err)
 	}
-	defer resp.Body.Close()
-
+	defer func() { _ = resp.Body.Close() }()
 	// Log final URL after redirects for debugging
 	log.Debugf("Final URL after redirects: %s", resp.Request.URL.String())
 
@@ -509,8 +508,7 @@ func (d *Downloader) DownloadImage(targetDir string, imageURL string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("%w: performing image request for %s: %v", ErrHttpRequest, imageURL, err)
 	}
-	defer resp.Body.Close()
-
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("%w: received status %d for image %s", ErrHttpStatus, resp.StatusCode, imageURL)
 	}

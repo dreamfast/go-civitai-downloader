@@ -20,6 +20,23 @@ import (
 	"github.com/zeebo/blake3"
 )
 
+// Common file extensions for image MIME types
+const (
+	ExtJPG  = ".jpg"
+	ExtPNG  = ".png"
+	ExtGIF  = ".gif"
+	ExtWebP = ".webp"
+	ExtMP4  = ".mp4"
+)
+
+// imageMimeToExt maps known image MIME types to their file extensions.
+var imageMimeToExt = map[string]string{
+	"image/jpeg": ExtJPG,
+	"image/png":  ExtPNG,
+	"image/gif":  ExtGIF,
+	"image/webp": ExtWebP,
+}
+
 // CheckHash verifies the hash of a file against expected values.
 // Returns true if ANY of the provided hashes match the calculated ones.
 // Checks in the order: BLAKE3, SHA256, CRC32, AutoV2.
@@ -178,13 +195,6 @@ func CheckAndMakeDir(dir string) bool {
 // Returns the corrected final path and an error if reading fails.
 func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, error) {
 	originalExt := strings.ToLower(filepath.Ext(finalFilePath))
-	// Map of known image MIME types to extensions
-	mimeToExt := map[string]string{
-		"image/jpeg": ".jpg",
-		"image/png":  ".png",
-		"image/gif":  ".gif",
-		"image/webp": ".webp",
-	}
 
 	fRead, errRead := os.Open(SanitizePath(tempFilePath))
 	if errRead != nil {
@@ -192,8 +202,7 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 		// Return original path, don't treat this as a fatal error for the caller
 		return finalFilePath, nil
 	}
-	defer fRead.Close()
-
+	defer func() { _ = fRead.Close() }()
 	// Read the first 512 bytes for MIME detection
 	buff := make([]byte, 512)
 	n, errReadBytes := fRead.Read(buff)
@@ -210,7 +219,7 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 
 	correctedFinalPath := finalFilePath // Default to original
 
-	if detectedExt, ok := mimeToExt[mainMimeType]; ok {
+	if detectedExt, ok := imageMimeToExt[mainMimeType]; ok {
 		log.Debugf("Detected MIME type: %s -> Extension: %s for %s", mimeType, detectedExt, tempFilePath)
 
 		// Check for mismatch, BUT allow .jpeg for image/jpeg
@@ -235,12 +244,11 @@ func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, er
 
 // -- Hashing Helper --
 func calculateHash(filePath string, hashAlgo hash.Hash) (string, error) {
-	file, err := os.Open(filePath)
+	file, err := os.Open(filePath) //nolint:gosec // G304: filePath is a parameter from internal callers, not user input
 	if err != nil {
 		return "", fmt.Errorf("opening file %s for hashing: %w", filePath, err)
 	}
-	defer file.Close()
-
+	defer func() { _ = file.Close() }()
 	if _, err := io.Copy(hashAlgo, file); err != nil {
 		return "", fmt.Errorf("hashing file %s: %w", filePath, err)
 	}
@@ -254,12 +262,12 @@ func GetExtensionFromMimeType(mimeType string) (string, bool) {
 	// Handle potential parameters in the MIME type (e.g., "text/plain; charset=utf-8")
 	baseMimeType, _, _ := mime.ParseMediaType(mimeType)
 
-	// Common MIME types and their standard extensions
+	// Build extended MIME extension map from image map plus additional types
 	mimeExtensionMap := map[string]string{
-		"image/jpeg": ".jpg",
-		"image/webp": ".webp",
-		"image/png":  ".png",
-		"video/mp4":  ".mp4",
+		"video/mp4": ExtMP4,
+	}
+	for k, v := range imageMimeToExt {
+		mimeExtensionMap[k] = v
 	}
 
 	ext, ok := mimeExtensionMap[baseMimeType]

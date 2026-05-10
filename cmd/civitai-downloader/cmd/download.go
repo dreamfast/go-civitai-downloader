@@ -304,12 +304,13 @@ func confirmDownload(downloadsToQueue []potentialDownload, cfg *models.Config) b
 		}
 		input = strings.TrimSpace(strings.ToLower(input))
 
-		if input == "y" || input == "yes" {
+		switch input {
+		case "y", "yes":
 			return true
-		} else if input == "n" || input == "no" {
+		case "n", "no":
 			log.Info("Download canceled by user.")
 			return false
-		} else {
+		default:
 			fmt.Println("Invalid input. Please enter 'y' or 'n'.")
 		}
 	}
@@ -398,12 +399,13 @@ func confirmParameters(cmd *cobra.Command, cfg *models.Config, queryParams model
 		}
 		input = strings.TrimSpace(strings.ToLower(input))
 
-		if input == "y" || input == "yes" {
+		switch input {
+		case "y", "yes":
 			return true
-		} else if input == "n" || input == "no" {
+		case "n", "no":
 			log.Info("Operation canceled by user.")
 			return false
-		} else {
+		default:
 			fmt.Println("Invalid input. Please enter 'y' or 'n'.")
 		}
 	}
@@ -587,8 +589,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		log.Errorf("Failed to set up download environment: %v", err)
 		return err
 	}
-	defer db.Close()
-
+	defer func() { _ = db.Close() }()
 	// Create API client instance using shared client and config
 	apiClient := api.NewClient(cfg.APIKey, sharedHttpClient, *cfg)
 

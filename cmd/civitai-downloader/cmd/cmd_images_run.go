@@ -53,89 +53,62 @@ func runImages(cmd *cobra.Command, args []string) {
 	// This apiClient is used for all API calls in this command
 	apiClient := api.NewClient(cfg.APIKey, httpClient, cfg)
 
-	// --- Pre-fetch ModelID if only ModelVersionID is provided ---
-	prefetchedModelID := cfg.Images.ModelID
-	if prefetchedModelID == 0 && cfg.Images.ModelVersionID != 0 {
-		log.Infof("Fetching model details for version %d to find parent model ID...", cfg.Images.ModelVersionID)
-		versionDetails, err := apiClient.GetModelVersionDetails(cfg.Images.ModelVersionID)
-		if err != nil {
-			log.WithError(err).Fatalf("Failed to get model details for version %d. Cannot proceed.", cfg.Images.ModelVersionID)
-		}
-		prefetchedModelID = versionDetails.ModelId
-		log.Infof("Found parent ModelID: %d", prefetchedModelID)
-	}
-	// --- End Pre-fetch ---
+	// Pre-fetch ModelID if only ModelVersionID is provided
+	prefetchedModelID := resolveModelID(&cfg, apiClient)
 
+	// Fetch image list from API
+	allImages, loopErr := fetchImageList(&cfg, apiClient, userTotalLimit, maxPages)
+
+	if loopErr != nil {
+		log.WithError(loopErr).Error("Image fetching stopped due to an error.")
+		if len(allImages) == 0 {
+			log.Fatal("Exiting as no images were fetched before the error occurred.")
+		}
+		log.Warnf("Proceeding with %d images fetched before the error.", len(allImages))
+	} else {
+		log.Info("--- Finished Image Fetching ---")
+	}
+
+	if len(allImages) == 0 {
+		log.Info("No images found matching the criteria after fetching from API.")
+		return
+	}
+	log.Infof("Found %d total images to potentially download.", len(allImages))
+
+	// Download images using worker pool
+	downloadAllImages(&cfg, allImages, targetDir, saveMeta, numWorkers, prefetchedModelID, apiClient)
+}
+
+// resolveModelID pre-fetches the parent model ID if only ModelVersionID is provided.
+func resolveModelID(cfg *models.Config, apiClient *api.Client) int {
+	if cfg.Images.ModelID != 0 || cfg.Images.ModelVersionID == 0 {
+		return cfg.Images.ModelID
+	}
+	log.Infof("Fetching model details for version %d to find parent model ID...", cfg.Images.ModelVersionID)
+	versionDetails, err := apiClient.GetModelVersionDetails(cfg.Images.ModelVersionID)
+	if err != nil {
+		log.WithError(err).Fatalf("Failed to get model details for version %d. Cannot proceed.", cfg.Images.ModelVersionID)
+	}
+	log.Infof("Found parent ModelID: %d", versionDetails.ModelId)
+	return versionDetails.ModelId
+}
+
+// fetchImageList handles cursor-advance and main API fetching to collect all images.
+func fetchImageList(cfg *models.Config, apiClient *api.Client, userTotalLimit int, maxPages int) ([]models.ImageApiItem, error) {
 	log.Info("Fetching image list from Civitai API...")
-	var allImages []models.ImageApiItem
-	initialApiParams := CreateImageQueryParams(&cfg)
+	initialApiParams := CreateImageQueryParams(cfg)
 
 	pageCount := 0
 	var nextCursor string
-	var loopErr error
 
-	// --- Cursor-advance for Page > 1 --- START ---
-	if cfg.Images.Page > 1 {
-		if cfg.Images.Page > 50 {
-			log.Warnf("Page %d exceeds maximum allowed (50). Capping to 50.", cfg.Images.Page)
-			cfg.Images.Page = 50
-		}
-		if cfg.Images.Page > 10 {
-			log.Warnf("Page %d may trigger rate limiting due to %d cursor-advance API calls.", cfg.Images.Page, cfg.Images.Page-1)
-		}
-
-		skipCount := cfg.Images.Page - 1
-		log.Infof("Skipping to page %d: advancing cursor through %d pages...", cfg.Images.Page, skipCount)
-
-		skipCursor := ""
-		for i := 0; i < skipCount; i++ {
-			if maxPages > 0 && (i+1) > maxPages {
-				log.Warnf("--page %d with --max-pages %d: skip consumes all allowed pages. No images will be fetched.", cfg.Images.Page, maxPages)
-				loopErr = fmt.Errorf("page skip (%d) exceeds max-pages limit (%d)", cfg.Images.Page, maxPages)
-				break
-			}
-
-			skipParams := initialApiParams
-			if skipCursor != "" {
-				skipParams.Cursor = skipCursor
-			}
-
-			_, skipResp, skipErr := apiClient.GetImages(skipCursor, skipParams)
-			if skipErr != nil {
-				loopErr = fmt.Errorf("failed to advance cursor to page %d: %w", i+2, skipErr)
-				break
-			}
-
-			if len(skipResp.Items) == 0 {
-				log.Infof("No more images available during cursor advance. Stopping at effective page %d.", i+1)
-				break
-			}
-
-			skipCursor = skipResp.Metadata.NextCursor.String()
-			if skipCursor == "" {
-				log.Info("No next cursor during advance. End of results reached before target page.")
-				break
-			}
-
-			pageCount++ // Count skipped pages against maxPages
-			log.Debugf("Cursor advanced: page %d/%d skipped. Next cursor: %s", i+1, skipCount, skipCursor)
-
-			if cfg.APIDelayMs > 0 {
-				time.Sleep(time.Duration(cfg.APIDelayMs) * time.Millisecond)
-			}
-		}
-
-		nextCursor = skipCursor
-		log.Infof("Cursor advance complete. Starting download from page %d (cursor: %s).", cfg.Images.Page, nextCursor)
-	}
-	// --- Cursor-advance for Page > 1 --- END ---
-
+	// Cursor-advance for Page > 1
+	nextCursor, loopErr := advanceCursorToPage(cfg, apiClient, initialApiParams, maxPages, &pageCount)
 	if loopErr != nil {
-		log.WithError(loopErr).Error("Cursor advance failed. No images will be fetched.")
-		return
+		return nil, loopErr
 	}
 
-	log.Info("--- Starting Image Fetching ---")
+	// Main fetching loop
+	var allImages []models.ImageApiItem
 	for {
 		pageCount++
 		if maxPages > 0 && pageCount > maxPages {
@@ -150,8 +123,7 @@ func runImages(cmd *cobra.Command, args []string) {
 
 		_, response, err := apiClient.GetImages(nextCursor, currentApiParams)
 		if err != nil {
-			loopErr = fmt.Errorf("failed to fetch image metadata page %d: %w", pageCount, err)
-			break
+			return allImages, fmt.Errorf("failed to fetch image metadata page %d: %w", pageCount, err)
 		}
 
 		if len(response.Items) == 0 {
@@ -180,22 +152,68 @@ func runImages(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	if loopErr != nil {
-		log.WithError(loopErr).Error("Image fetching loop stopped due to an error.")
-		if len(allImages) == 0 {
-			log.Fatal("Exiting as no images were fetched before the error occurred.")
+	return allImages, nil
+}
+
+// advanceCursorToPage advances the cursor to the requested page when Page > 1.
+func advanceCursorToPage(cfg *models.Config, apiClient *api.Client, initialApiParams models.ImageAPIParameters, maxPages int, pageCount *int) (string, error) {
+	if cfg.Images.Page <= 1 {
+		return "", nil
+	}
+
+	if cfg.Images.Page > 50 {
+		log.Warnf("Page %d exceeds maximum allowed (50). Capping to 50.", cfg.Images.Page)
+		cfg.Images.Page = 50
+	}
+	if cfg.Images.Page > 10 {
+		log.Warnf("Page %d may trigger rate limiting due to %d cursor-advance API calls.", cfg.Images.Page, cfg.Images.Page-1)
+	}
+
+	skipCount := cfg.Images.Page - 1
+	log.Infof("Skipping to page %d: advancing cursor through %d pages...", cfg.Images.Page, skipCount)
+
+	skipCursor := ""
+	for i := 0; i < skipCount; i++ {
+		if maxPages > 0 && (i+1) > maxPages {
+			log.Warnf("--page %d with --max-pages %d: skip consumes all allowed pages. No images will be fetched.", cfg.Images.Page, maxPages)
+			return skipCursor, fmt.Errorf("page skip (%d) exceeds max-pages limit (%d)", cfg.Images.Page, maxPages)
 		}
-		log.Warnf("Proceeding with %d images fetched before the error.", len(allImages))
-	} else {
-		log.Info("--- Finished Image Fetching ---")
+
+		skipParams := initialApiParams
+		if skipCursor != "" {
+			skipParams.Cursor = skipCursor
+		}
+
+		_, skipResp, skipErr := apiClient.GetImages(skipCursor, skipParams)
+		if skipErr != nil {
+			return skipCursor, fmt.Errorf("failed to advance cursor to page %d: %w", i+2, skipErr)
+		}
+
+		if len(skipResp.Items) == 0 {
+			log.Infof("No more images available during cursor advance. Stopping at effective page %d.", i+1)
+			break
+		}
+
+		skipCursor = skipResp.Metadata.NextCursor.String()
+		if skipCursor == "" {
+			log.Info("No next cursor during advance. End of results reached before target page.")
+			break
+		}
+
+		*pageCount++ // Count skipped pages against maxPages
+		log.Debugf("Cursor advanced: page %d/%d skipped. Next cursor: %s", i+1, skipCount, skipCursor)
+
+		if cfg.APIDelayMs > 0 {
+			time.Sleep(time.Duration(cfg.APIDelayMs) * time.Millisecond)
+		}
 	}
 
-	if len(allImages) == 0 {
-		log.Info("No images found matching the criteria after fetching from API.")
-		return
-	}
-	log.Infof("Found %d total images to potentially download.", len(allImages))
+	log.Infof("Cursor advance complete. Starting download from page %d (cursor: %s).", cfg.Images.Page, skipCursor)
+	return skipCursor, nil
+}
 
+// downloadAllImages sets up worker pool and downloads all collected images.
+func downloadAllImages(cfg *models.Config, allImages []models.ImageApiItem, targetDir string, saveMeta bool, numWorkers int, prefetchedModelID int, apiClient *api.Client) {
 	downloadHttpClient := &http.Client{
 		Transport: globalHttpTransport,
 		Timeout:   0,
@@ -221,7 +239,7 @@ func runImages(cmd *cobra.Command, args []string) {
 	log.Infof("Starting %d image download workers...", numWorkers)
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
-		go imageDownloadWorker(i, jobs, dl, &wg, writer, &successCount, &failureCount, saveMeta, finalBaseTargetDir, apiClient, &cfg)
+		go imageDownloadWorker(i, jobs, dl, &wg, writer, &successCount, &failureCount, saveMeta, finalBaseTargetDir, apiClient, cfg)
 	}
 
 	log.Infof("Queueing %d image download jobs...", len(allImages))

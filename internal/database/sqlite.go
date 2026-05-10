@@ -326,8 +326,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error querying files for key %s: %w", key, err)
 	}
-	defer rows.Close()
-
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var file models.File
 		var metadataFp, metadataSize, metadataFormat sql.NullString
@@ -374,8 +373,7 @@ func (d *DB) getDatabaseEntry(key string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error querying images for key %s: %w", key, err)
 	}
-	defer imageRows.Close()
-
+	defer func() { _ = imageRows.Close() }()
 	for imageRows.Next() {
 		var img models.ModelImage
 		var postID sql.NullInt64
@@ -618,8 +616,7 @@ func (d *DB) Fold(fn func(key []byte, value []byte) error) error {
 	if err != nil {
 		return fmt.Errorf("error querying models for fold: %w", err)
 	}
-	defer rows.Close()
-
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var versionID int
 		if err := rows.Scan(&versionID); err != nil {
@@ -646,8 +643,7 @@ func (d *DB) Fold(fn func(key []byte, value []byte) error) error {
 	if err != nil {
 		return fmt.Errorf("error querying pagination state for fold: %w", err)
 	}
-	defer pageRows.Close()
-
+	defer func() { _ = pageRows.Close() }()
 	for pageRows.Next() {
 		var queryHash string
 		var currentPage int
@@ -683,8 +679,7 @@ func (d *DB) Keys() <-chan []byte {
 			log.WithError(err).Error("Keys: Error querying models")
 			return
 		}
-		defer rows.Close()
-
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var versionID int
 			if err := rows.Scan(&versionID); err != nil {
@@ -700,8 +695,7 @@ func (d *DB) Keys() <-chan []byte {
 			log.WithError(err).Error("Keys: Error querying pagination state")
 			return
 		}
-		defer pageRows.Close()
-
+		defer func() { _ = pageRows.Close() }()
 		for pageRows.Next() {
 			var queryHash string
 			if err := pageRows.Scan(&queryHash); err != nil {

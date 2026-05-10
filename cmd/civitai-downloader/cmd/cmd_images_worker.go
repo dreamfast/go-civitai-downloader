@@ -57,7 +57,7 @@ func imageDownloadWorker(
 
 	for job := range jobs {
 		log.Infof("[%s] Processing image ID %d", logPrefix, job.ImageID)
-		fmt.Fprintf(writer, "[%s] Processing image %d...\n", logPrefix, job.ImageID)
+		_, _ = fmt.Fprintf(writer, "[%s] Processing image %d...\n", logPrefix, job.ImageID) //nolint:errcheck
 
 		// Step 1: Generate path using simple data from images API (no expensive model API calls)
 		imageData := map[string]string{
@@ -95,7 +95,7 @@ func imageDownloadWorker(
 		if err != nil {
 			log.WithError(err).Errorf("[%s] Failed to download image from %s", logPrefix, job.SourceURL)
 			atomic.AddInt64(failureCount, 1)
-			fmt.Fprintf(writer.Newline(), "[%s] Error downloading image %d: %v\n", logPrefix, job.ImageID, err)
+			_, _ = fmt.Fprintf(writer.Newline(), "[%s] Error downloading image %d: %v\n", logPrefix, job.ImageID, err) //nolint:errcheck
 			continue
 		}
 		log.Infof("[%s] Successfully downloaded image %s", logPrefix, imageFilename)
@@ -124,7 +124,7 @@ func imageDownloadWorker(
 				}
 			}
 		}
-		fmt.Fprintf(writer.Newline(), "[%s] Successfully processed image %d -> %s\n", logPrefix, job.ImageID, imageFilename)
+		_, _ = fmt.Fprintf(writer.Newline(), "[%s] Successfully processed image %d -> %s\n", logPrefix, job.ImageID, imageFilename) //nolint:errcheck
 	}
 	log.Debugf("[%s] Exiting", logPrefix)
 }

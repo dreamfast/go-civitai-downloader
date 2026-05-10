@@ -95,7 +95,7 @@ func handleMetadataSaving(logPrefix string, pd potentialDownload, finalPath stri
 		log.Debugf("[%s] Saving version metadata for successfully downloaded file: %s", logPrefix, finalPath)
 		if metaErr := saveVersionMetadataFile(pd, finalPath); metaErr != nil {
 			if writer != nil {
-				fmt.Fprintf(writer.Newline(), "[%s] Error saving version metadata for %s: %v\n", logPrefix, filepath.Base(finalPath), metaErr)
+				_, _ = fmt.Fprintf(writer.Newline(), "[%s] Error saving version metadata for %s: %v\n", logPrefix, filepath.Base(finalPath), metaErr) //nolint:errcheck
 			}
 			// Error is already logged by saveVersionMetadataFile
 		}
@@ -109,7 +109,7 @@ func handleMetadataSaving(logPrefix string, pd potentialDownload, finalPath stri
 		// This function is now in cmd_download_processing.go
 		if infoErr := saveModelInfoFile(pd, cfg); infoErr != nil {
 			if writer != nil {
-				fmt.Fprintf(writer.Newline(), "[%s] Error saving model info for %s: %v\n", logPrefix, pd.ModelName, infoErr)
+				_, _ = fmt.Fprintf(writer.Newline(), "[%s] Error saving model info for %s: %v\n", logPrefix, pd.ModelName, infoErr) //nolint:errcheck
 			}
 			// Error is already logged by saveModelInfoFile
 		}
@@ -228,7 +228,7 @@ func (ctx *WorkerContext) ensureDirectory(directoryPath, dbKey string, errGet er
 		if updateErr != nil {
 			log.Errorf("Worker %d: Failed to update DB status after mkdir error: %v", ctx.ID, updateErr)
 		}
-		fmt.Fprintf(ctx.Writer.Newline(), "Worker %d: Error creating directory for %s: %v\n", ctx.ID, filepath.Base(directoryPath), err)
+		_, _ = fmt.Fprintf(ctx.Writer.Newline(), "Worker %d: Error creating directory for %s: %v\n", ctx.ID, filepath.Base(directoryPath), err) //nolint:errcheck
 		return err
 	}
 	return nil
@@ -243,7 +243,7 @@ func (ctx *WorkerContext) performFileDownload(pd potentialDownload, dbKey string
 
 	log.Infof("[%s] Status is '%s', proceeding with download check/process.", ctx.LogPrefix, initialStatus)
 	startTime := time.Now()
-	fmt.Fprintf(ctx.Writer.Newline(), "Worker %d: Checking/Downloading %s...\n", ctx.ID, filepath.Base(pd.TargetFilepath))
+	_, _ = fmt.Fprintf(ctx.Writer.Newline(), "Worker %d: Checking/Downloading %s...\n", ctx.ID, filepath.Base(pd.TargetFilepath)) //nolint:errcheck
 
 	actualFinalPath, downloadErr := ctx.FileDownloader.DownloadFile(pd.TargetFilepath, pd.File.DownloadUrl, pd.File.Hashes, pd.ModelVersionID)
 
@@ -254,7 +254,7 @@ func (ctx *WorkerContext) performFileDownload(pd potentialDownload, dbKey string
 		finalStatus = models.StatusDownloaded
 		duration := time.Since(startTime)
 		log.Infof("[%s] Successfully downloaded %s in %v", ctx.LogPrefix, actualFinalPath, duration)
-		fmt.Fprintf(ctx.Writer.Newline(), "[%s] Success downloading %s\n", ctx.LogPrefix, filepath.Base(actualFinalPath))
+		_, _ = fmt.Fprintf(ctx.Writer.Newline(), "[%s] Success downloading %s\n", ctx.LogPrefix, filepath.Base(actualFinalPath)) //nolint:errcheck
 	}
 
 	return actualFinalPath, finalStatus, downloadErr
@@ -285,7 +285,7 @@ func (ctx *WorkerContext) updateDatabaseAfterDownload(dbKey string, pd potential
 
 	if updateErr != nil {
 		log.Errorf("Worker %d: Failed DB update for key %s after download attempt: %v", ctx.ID, dbKey, updateErr)
-		fmt.Fprintf(ctx.Writer.Newline(), "Worker %d: DB Error updating status for %s\n", ctx.ID, pd.FinalBaseFilename)
+		_, _ = fmt.Fprintf(ctx.Writer.Newline(), "Worker %d: DB Error updating status for %s\n", ctx.ID, pd.FinalBaseFilename) //nolint:errcheck
 	} else {
 		log.Debugf("[%s] DB status updated to %s for key %s", ctx.LogPrefix, finalStatus, dbKey)
 	}
@@ -327,7 +327,7 @@ func (ctx *WorkerContext) processJob(job downloadJob) {
 	dbKey := job.DatabaseKey
 
 	log.Infof("[%s] Processing job for %s (DB Key: %s)", ctx.LogPrefix, pd.TargetFilepath, dbKey)
-	fmt.Fprintf(ctx.Writer, "[%s] Preparing %s... (%d/%d)\n", ctx.LogPrefix, filepath.Base(pd.TargetFilepath), ctx.ProcessedCount+1, ctx.TotalJobs)
+	_, _ = fmt.Fprintf(ctx.Writer, "[%s] Preparing %s... (%d/%d)\n", ctx.LogPrefix, filepath.Base(pd.TargetFilepath), ctx.ProcessedCount+1, ctx.TotalJobs) //nolint:errcheck
 
 	// Check initial database status
 	initialDbStatus, finalPath, errGet := ctx.checkInitialDBStatus(dbKey, pd.TargetFilepath)
@@ -361,7 +361,7 @@ func (ctx *WorkerContext) processJob(job downloadJob) {
 	}
 
 	ctx.ProcessedCount++
-	fmt.Fprintf(ctx.Writer.Newline(), "Worker %d: Finished job processing.\n", ctx.ID)
+	_, _ = fmt.Fprintf(ctx.Writer.Newline(), "Worker %d: Finished job processing.\n", ctx.ID) //nolint:errcheck
 }
 
 // downloadWorker handles the actual download of files and updates the database.

@@ -96,7 +96,7 @@ func runDelete(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.WithError(err).Fatalf("Error opening database at %s", cfg.DatabasePath)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Find entries based on provided criteria
 	entries := findEntriesToDelete(db)
@@ -239,11 +239,11 @@ func interactiveSelectEntries(entries []models.DatabaseEntry) []models.DatabaseE
 
 	// Display numbered table
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  #\tModel Name\tVersion\tCreator\tType\tStatus\tVersion ID")
-	fmt.Fprintln(tw, "  -\t----------\t-------\t-------\t----\t------\t----------")
+	_, _ = fmt.Fprintln(tw, "  #\tModel Name\tVersion\tCreator\tType\tStatus\tVersion ID")
+	_, _ = fmt.Fprintln(tw, "  -\t----------\t-------\t-------\t----\t------\t----------")
 
 	for i, entry := range entries {
-		fmt.Fprintf(tw, "  %d\t%s\t%s\t%s\t%s\t%s\t%d\n",
+		_, _ = fmt.Fprintf(tw, "  %d\t%s\t%s\t%s\t%s\t%s\t%d\n", //nolint:errcheck
 			i+1,
 			truncateString(entry.ModelName, 30),
 			truncateString(entry.Version.Name, 15),
@@ -253,7 +253,7 @@ func interactiveSelectEntries(entries []models.DatabaseEntry) []models.DatabaseE
 			entry.Version.ID,
 		)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	fmt.Println()
 	fmt.Print("Enter numbers to delete (e.g., 1,3,5 or 1-3 or 'all', or 'q' to cancel): ")
@@ -342,12 +342,12 @@ func displayDeletionTable(entries []models.DatabaseEntry, savePath string) {
 	fmt.Printf("\nEntries to be deleted (%d total):\n\n", len(entries))
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "Model Name\tVersion\tCreator\tType\tStatus\tFolder\tVersion ID")
-	fmt.Fprintln(tw, "----------\t-------\t-------\t----\t------\t------\t----------")
+	_, _ = fmt.Fprintln(tw, "Model Name\tVersion\tCreator\tType\tStatus\tFolder\tVersion ID")
+	_, _ = fmt.Fprintln(tw, "----------\t-------\t-------\t----\t------\t------\t----------")
 
 	var totalSizeKB uint64
 	for _, entry := range entries {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n", //nolint:errcheck
 			truncateString(entry.ModelName, 25),
 			truncateString(entry.Version.Name, 12),
 			truncateString(entry.Creator.Username, 12),
@@ -360,7 +360,7 @@ func displayDeletionTable(entries []models.DatabaseEntry, savePath string) {
 			totalSizeKB += uint64(entry.File.SizeKB)
 		}
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	// Show size estimate
 	if totalSizeKB > 0 {

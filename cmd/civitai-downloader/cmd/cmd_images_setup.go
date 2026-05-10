@@ -4,18 +4,18 @@ package cmd
 
 // Variables for Image Flags (package level)
 var (
-	imagesLimitFlag           int
-	imagesPostIDFlag          int
-	imagesModelIDFlag         int
-	imagesModelVersionIDFlag  int
-	imagesImageIDFlag         int
-	imagesUsernameFlag        string
-	imagesNsfwFlag            string
-	imagesSortFlag            string
-	imagesPeriodFlag          string
-	imagesPageFlag            int
-	imagesMaxPagesFlag        int
-	imagesOutputDirFlag       string
+	imagesLimitFlag            int
+	imagesPostIDFlag           int
+	imagesModelIDFlag          int
+	imagesModelVersionIDFlag   int
+	imagesImageIDFlag          int
+	imagesUsernameFlag         string
+	imagesNsfwFlag             string
+	imagesSortFlag             string
+	imagesPeriodFlag           string
+	imagesPageFlag             int
+	imagesMaxPagesFlag         int
+	imagesOutputDirFlag        string
 	imagesConcurrencyFlag      int
 	imagesMetadataFlag         bool
 	imagesDisableImageMimeFlag bool

@@ -10,6 +10,7 @@ import (
 
 	"go-civitai-download/internal/api"
 	"go-civitai-download/internal/models"
+	"go-civitai-download/internal/paths"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -60,18 +61,18 @@ const (
 	DefaultConfigDownloadTrainedWordsPathPattern = "{{.CreatorName}}/{{.ModelName}}/{{.VersionName}}/{{.TrainedWordsFilename}}"
 
 	// Images specific defaults
-	DefaultConfigImagesLimit          = 100
-	DefaultConfigImagesPostID         = 0
-	DefaultConfigImagesModelID        = 0
-	DefaultConfigImagesModelVersionID = 0
-	DefaultConfigImagesUsername       = ""
-	DefaultConfigImagesNsfw           = "None" // API values: "None", "Soft", "Mature", "X"
-	DefaultConfigImagesSort           = "Newest"
-	DefaultConfigImagesPeriod         = "AllTime"
-	DefaultConfigImagesPage           = 1
-	DefaultConfigImagesMaxPages       = 10
-	DefaultConfigImagesOutputDir      = "" // Empty means SavePath/images
-	DefaultConfigImagesConcurrency    = 5
+	DefaultConfigImagesLimit               = 100
+	DefaultConfigImagesPostID              = 0
+	DefaultConfigImagesModelID             = 0
+	DefaultConfigImagesModelVersionID      = 0
+	DefaultConfigImagesUsername            = ""
+	DefaultConfigImagesNsfw                = "None" // API values: "None", "Soft", "Mature", "X"
+	DefaultConfigImagesSort                = "Newest"
+	DefaultConfigImagesPeriod              = "AllTime"
+	DefaultConfigImagesPage                = 1
+	DefaultConfigImagesMaxPages            = 10
+	DefaultConfigImagesOutputDir           = "" // Empty means SavePath/images
+	DefaultConfigImagesConcurrency         = 5
 	DefaultConfigImagesSaveMetadata        = true
 	DefaultConfigImagesDetectImageMimeType = true
 	DefaultConfigImagesPathPattern         = "{username}/{baseModel}" // Simple pattern using data from images API
@@ -235,21 +236,21 @@ type CliDownloadFlags struct {
 }
 
 type CliImagesFlags struct {
-	Limit               *int    // --limit
-	PostID              *int    // --post-id
-	ModelID             *int    // --model-id
-	ModelVersionID      *int    // --model-version-id
-	ImageID             *int    // --image-id
-	Username            *string // -u
-	Nsfw                *string // --nsfw
-	Sort                *string // -s
-	Period              *string // -p
-	Page                *int    // --page
-	MaxPages            *int    // --max-pages
-	OutputDir           *string // -o
-	Concurrency          *int  // -c
-	SaveMetadata         *bool // --metadata
-	DisableImageMimeType *bool // --disable-image-mime
+	Limit                *int    // --limit
+	PostID               *int    // --post-id
+	ModelID              *int    // --model-id
+	ModelVersionID       *int    // --model-version-id
+	ImageID              *int    // --image-id
+	Username             *string // -u
+	Nsfw                 *string // --nsfw
+	Sort                 *string // -s
+	Period               *string // -p
+	Page                 *int    // --page
+	MaxPages             *int    // --max-pages
+	OutputDir            *string // -o
+	Concurrency          *int    // -c
+	SaveMetadata         *bool   // --metadata
+	DisableImageMimeType *bool   // --disable-image-mime
 }
 
 type CliTorrentFlags struct {
@@ -699,7 +700,7 @@ func validateConfig(cfg *models.Config) error {
 // setupHTTPTransport sets up the HTTP transport with optional logging
 func setupHTTPTransport(cfg *models.Config) (http.RoundTripper, error) {
 	baseTransport := http.DefaultTransport
-	var finalTransport http.RoundTripper = baseTransport
+	var finalTransport = baseTransport
 
 	if cfg.LogApiRequests {
 		log.Debug("API request logging enabled.")
@@ -731,22 +732,22 @@ var pathPatternTagRegex = regexp.MustCompile(`\{([^}]+)\}`)
 
 // modelLevelAllowedTags are placeholders valid in ModelInfoPathPattern
 var modelLevelAllowedTags = map[string]struct{}{
-	"modelId":     {},
-	"modelName":   {},
-	"modelType":   {},
-	"creatorName": {},
+	paths.PlaceholderModelID:     {},
+	paths.PlaceholderModelName:   {},
+	paths.PlaceholderModelType:   {},
+	paths.PlaceholderCreatorName: {},
 	// {baseModel} is intentionally omitted as it leads to 'unknown_baseModel'
 }
 
 // versionLevelAllowedTags are placeholders valid in VersionPathPattern
 var versionLevelAllowedTags = map[string]struct{}{
-	"modelId":     {},
-	"modelName":   {},
-	"modelType":   {},
-	"creatorName": {},
-	"versionId":   {},
-	"versionName": {},
-	"baseModel":   {},
+	paths.PlaceholderModelID:     {},
+	paths.PlaceholderModelName:   {},
+	paths.PlaceholderModelType:   {},
+	paths.PlaceholderCreatorName: {},
+	paths.PlaceholderVersionID:   {},
+	paths.PlaceholderVersionName: {},
+	paths.PlaceholderBaseModel:   {},
 }
 
 // validatePathPattern checks a given pattern string against a map of allowed tags.

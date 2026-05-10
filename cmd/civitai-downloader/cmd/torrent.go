@@ -100,8 +100,7 @@ and the downloaded files themselves. You must specify tracker announce URLs.`,
 			log.WithError(err).Errorf("Error opening database at %s", dbPath)
 			return fmt.Errorf("error opening database: %w", err)
 		}
-		defer db.Close()
-
+		defer func() { _ = db.Close() }()
 		// Retrieve flag values - use command flags with config fallback
 		torrentOutputDirEffective := torrentOutputDir
 		if torrentOutputDirEffective == "" {
