@@ -159,6 +159,7 @@ type (
 		Usernames             []string `toml:"Usernames"`
 		IgnoreBaseModels      []string `toml:"IgnoreBaseModels"`
 		IgnoreFileNameStrings []string `toml:"IgnoreFileNameStrings"`
+		IgnoreTags            []string `toml:"IgnoreTags"`
 		// Integers
 		Concurrency    int `toml:"Concurrency"`
 		Limit          int `toml:"Limit"`

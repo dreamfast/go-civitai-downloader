@@ -75,6 +75,8 @@ Pruned = false
 Fp16 = false
 # List of case-insensitive strings. If a filename contains any of these, it will be ignored. Corresponds to --ignore-filename-strings flag.
 IgnoreFileNameStrings = []
+# List of tags to ignore (exact match, case-insensitive). Models with any of these tags will be skipped. Corresponds to --ignore-tags flag.
+IgnoreTags = []
 
 # --- API Query Behavior ---
 # Sorting order for model search results ("Highest Rated", "Most Downloaded", "Newest", etc.). Corresponds to --sort flag.

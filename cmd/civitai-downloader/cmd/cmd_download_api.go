@@ -243,6 +243,20 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 	log.Infof("Successfully fetched details for version %d (%s) of model %s (%s)",
 		versionResponse.ID, versionResponse.Name, versionResponse.Model.Name, versionResponse.Model.Type)
 
+	var fullModelDetails models.Model
+    if len(cfg.Download.IgnoreTags) > 0 {
+        log.Debugf("IgnoreTags specified, fetching full model details for tag check...")
+        var err error
+        fullModelDetails, err = apiClient.GetModelDetails(versionResponse.ModelId)
+        if err != nil {
+            log.WithError(err).Warnf("Failed to fetch model details for tag check. Proceeding without tag filtering.")
+        } else {
+            log.Debugf("Successfully fetched model details for tag check. Model has %d tags.", len(fullModelDetails.Tags))
+        }
+    } else {
+        fullModelDetails.Tags = []string{}
+    }
+
 	if !passesBaseModelsFilter(versionResponse, cfg) {
 		return make([]potentialDownload, 0), 0, nil
 	}
@@ -258,6 +272,7 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 		ID:   versionResponse.ModelId, // Use ModelId from version
 		Name: versionResponse.Model.Name,
 		Type: versionResponse.Model.Type,
+		Tags: fullModelDetails.Tags,
 		// Creator is missing here, buildPathData will use fallback
 	}
 
@@ -283,6 +298,7 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 			ModelName:         pseudoModel.Name,
 			ModelType:         pseudoModel.Type,
 			Creator:           pseudoModel.Creator, // Will be fallback "unknown_creator"
+			Tags:              fullModelDetails.Tags,
 			FullVersion:       versionWithoutFilesImages,
 			ModelVersionID:    versionResponse.ID,
 			File:              file,
@@ -442,6 +458,7 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 				ModelName:         modelResponse.Name,
 				ModelType:         modelResponse.Type,
 				Creator:           modelResponse.Creator,
+				Tags:              modelResponse.Tags,
 				FullVersion:       versionForPd,
 				ModelVersionID:    versionForPd.ID,
 				File:              file,
@@ -595,6 +612,26 @@ func filterAndPrepareDownloads(potentialDownloadsPage []potentialDownload, db *d
 			continue
 		}
 
+		ignoredTags := cfg.Download.IgnoreTags
+        tagMatch := false
+        if len(ignoredTags) > 0 && len(pd.Tags) > 0 {
+            for _, ignoredTag := range ignoredTags {
+                for _, modelTag := range pd.Tags {
+                    if strings.EqualFold(ignoredTag, modelTag) {
+                        log.Debugf("      - Skipping file %s (Version %d): Model has ignored tag '%s'.", pd.File.Name, pd.ModelVersionID, ignoredTag)
+                        tagMatch = true
+                        break
+                    }
+                }
+                if tagMatch {
+                    break
+                }
+            }
+        }
+        if tagMatch {
+            continue
+        }
+
 		downloadsToQueueFiltered = append(downloadsToQueueFiltered, pd)
 		totalSizeFiltered += uint64(pd.File.SizeKB) * 1024
 	}
@@ -729,6 +766,10 @@ func processModelsOnPage(models []models.Model, apiClient *api.Client, cfg *mode
 			continue
 		}
 
+        if shouldSkipModelForTags(model, cfg) {
+            continue
+        }
+
 		fullModelDetails, err := fetchFullModelDetails(model.ID, apiClient)
 		if err != nil {
 			continue
@@ -806,6 +847,24 @@ func passesBaseModelsFilter(version models.ModelVersion, cfg *models.Config) boo
 	return false
 }
 
+// shouldSkipModelForTags checks if a model should be skipped based on tag filters
+func shouldSkipModelForTags(model models.Model, cfg *models.Config) bool {
+    if len(cfg.Download.IgnoreTags) == 0 || len(model.Tags) == 0 {
+        return false
+    }
+
+	for _, ignoredTag := range cfg.Download.IgnoreTags {
+        for _, modelTag := range model.Tags {
+            if strings.EqualFold(ignoredTag, modelTag) {
+                log.Debugf("Skipping model %s (ID: %d) due to ignored tag: '%s'", model.Name, model.ID, ignoredTag)
+                return true
+            }
+        }
+    }
+
+    return false
+}
+
 // fetchFullModelDetails fetches complete model details from the API
 func fetchFullModelDetails(modelID int, apiClient *api.Client) (models.Model, error) {
 	log.Debugf("Fetching full details for model %d to ensure accurate version data...", modelID)
@@ -869,6 +928,7 @@ func processVersionFiles(fullModelDetails models.Model, version models.ModelVers
 			ModelName:      fullModelDetails.Name,
 			ModelType:      fullModelDetails.Type,
 			Creator:        fullModelDetails.Creator,
+			Tags:           fullModelDetails.Tags,
 			FullVersion:    versionForPd,
 			ModelVersionID: versionForPd.ID,
 			File:           file,
