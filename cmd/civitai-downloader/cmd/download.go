@@ -42,6 +42,7 @@ var (
 	downloadAllVersionsFlag           bool
 	downloadIgnoreBaseModelsFlag      []string
 	downloadIgnoreFileNameStringsFlag []string
+	downloadIgnoreTagsFlag            []string
 	downloadYesFlag                   bool // Corresponds to SkipConfirmation
 	downloadMetadataFlag              bool // Corresponds to SaveMetadata
 	downloadModelInfoFlag             bool // Corresponds to SaveModelInfo
@@ -88,6 +89,7 @@ func init() {
 	downloadCmd.Flags().BoolVar(&downloadAllVersionsFlag, "all-versions", false, "Download all versions of a model, not just the latest (overrides config)")
 	downloadCmd.Flags().StringSliceVar(&downloadIgnoreBaseModelsFlag, "ignore-base-models", []string{}, "Base models to ignore (comma-separated or multiple flags, overrides config)")
 	downloadCmd.Flags().StringSliceVar(&downloadIgnoreFileNameStringsFlag, "ignore-filename-strings", []string{}, "Substrings in filenames to ignore (comma-separated or multiple flags, overrides config)")
+	downloadCmd.Flags().StringSliceVar(&downloadIgnoreTagsFlag, "ignore-tags", []string{}, "Tags to ignore (comma-separated or multiple flags, overrides config)")
 
 	// Saving & Behavior
 	downloadCmd.Flags().BoolVarP(&downloadYesFlag, "yes", "y", false, "Skip confirmation prompt before downloading (overrides config)")
@@ -331,6 +333,7 @@ func confirmParameters(cmd *cobra.Command, cfg *models.Config, queryParams model
 		"Fp16":                  cfg.Download.Fp16,
 		"IgnoreBaseModels":      cfg.Download.IgnoreBaseModels,
 		"IgnoreFileNameStrings": cfg.Download.IgnoreFileNameStrings,
+		"IgnoreTags":            cfg.Download.IgnoreTags,
 		"InitialRetryDelayMs":   cfg.InitialRetryDelayMs,
 		"LogApiRequests":        cfg.LogApiRequests,
 		"LogFormat":             cfg.LogFormat,

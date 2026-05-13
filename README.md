@@ -132,6 +132,7 @@ Generally arguments passed into the application will override the config file se
 | `ModelTypes`            | `[]string` | `[]`                 | Default model types to query (e.g., `["Checkpoint", "LORA"]`). Empty means all types.                |
 | `BaseModels`            | `[]string` | `[]`                 | Default base models to query (e.g., `["SDXL 1.0"]`). Empty means all base models.                     |
 | `IgnoreBaseModels`      | `[]string` | `[]`                 | List of base model strings to ignore (case-insensitive substring match). (`--ignore-base-models` flag) |
+| `IgnoreTags`            | `[]string` | `[]`                 | List of tags to ignore (exact match, case-insensitive). (`--ignore-tags` flag) |
 | `Nsfw`                  | `bool`     | `false`              | Default setting for including NSFW models in API queries.                                               |
 | `ModelVersionID`        | `int`      | `0`                  | Default model version ID to download (0 = disabled, overrides other filters).                           |
 | `AllVersions`           | `bool`     | `false`              | Download all versions of matched models, not just the latest. (`--all-versions` flag)                   |
@@ -223,6 +224,7 @@ Scans the Civitai API based on filters, asks for confirmation, and then download
 *   `--pruned`: Only download pruned Checkpoints (overrides config `Pruned`).
 *   `--fp16`: Only download fp16 Checkpoints (overrides config `Fp16`).
 *   `--ignore-base-models strings`: Base models to ignore (comma-separated or multiple flags, overrides config `IgnoreBaseModels`). *(No shorthand)*
+*   `--ignore-tags strings`: Tags to ignore (comma-separated or multiple flags, overrides config `IgnoreTags`). *(No shorthand)*
 *   `--ignore-filename-strings strings`: Substrings in filenames to ignore (comma-separated or multiple flags, overrides config `IgnoreFileNameStrings`). *(No shorthand)*
 *   `-c, --concurrency int`: Number of concurrent downloads (overrides config `Concurrency`).
 *   `--max-pages int`: Maximum number of API pages to fetch (0 for no limit). *(No shorthand)*

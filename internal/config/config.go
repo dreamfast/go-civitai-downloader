@@ -131,6 +131,7 @@ func setViperDefaults(v *viper.Viper) {
 	v.SetDefault("download.allversions", DefaultConfigDownloadAllVersions)
 	v.SetDefault("download.ignorebasemodels", []string{})      // Default empty slice
 	v.SetDefault("download.ignorefilenamestrings", []string{}) // Default empty slice
+	v.SetDefault("download.ignoretags", []string{})            // Default empty slice
 	v.SetDefault("download.skipconfirmation", DefaultConfigDownloadSkipConfirmation)
 	v.SetDefault("download.savemetadata", DefaultConfigDownloadSaveMetadata)
 	v.SetDefault("download.savemodelinfo", DefaultConfigDownloadSaveModelInfo)
@@ -227,6 +228,7 @@ type CliDownloadFlags struct {
 	AllVersions           *bool     // --all-versions
 	IgnoreBaseModels      *[]string // --ignore-base-models
 	IgnoreFileNameStrings *[]string // --ignore-filename-strings
+	IgnoreTags            *[]string // --ignore-tags
 	SkipConfirmation      *bool     // --yes
 	SaveMetadata          *bool     // --metadata
 	SaveModelInfo         *bool     // --model-info
@@ -306,6 +308,7 @@ func initializeDefaults() models.Config {
 			Usernames:             []string{},
 			IgnoreBaseModels:      []string{},
 			IgnoreFileNameStrings: []string{},
+			IgnoreTags:            []string{},
 		},
 		Images: models.ImagesConfig{
 			Limit:               100,
@@ -556,6 +559,10 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 		cfg.Download.IgnoreFileNameStrings = *flags.Download.IgnoreFileNameStrings
 		log.Debugf("[Initialize] CLI Override: Download.IgnoreFileNameStrings = %v", cfg.Download.IgnoreFileNameStrings)
 	}
+    if flags.Download.IgnoreTags != nil {
+        cfg.Download.IgnoreTags = *flags.Download.IgnoreTags
+        log.Debugf("[Initialize] CLI Override: Download.IgnoreTags = %v", cfg.Download.IgnoreTags)
+    }
 	if flags.Download.SkipConfirmation != nil {
 		cfg.Download.SkipConfirmation = *flags.Download.SkipConfirmation
 		log.Debugf("[Initialize] CLI Override: Download.SkipConfirmation = %t", cfg.Download.SkipConfirmation)
