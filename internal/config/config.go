@@ -559,10 +559,10 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 		cfg.Download.IgnoreFileNameStrings = *flags.Download.IgnoreFileNameStrings
 		log.Debugf("[Initialize] CLI Override: Download.IgnoreFileNameStrings = %v", cfg.Download.IgnoreFileNameStrings)
 	}
-    if flags.Download.IgnoreTags != nil {
-        cfg.Download.IgnoreTags = *flags.Download.IgnoreTags
-        log.Debugf("[Initialize] CLI Override: Download.IgnoreTags = %v", cfg.Download.IgnoreTags)
-    }
+	if flags.Download.IgnoreTags != nil {
+		cfg.Download.IgnoreTags = *flags.Download.IgnoreTags
+		log.Debugf("[Initialize] CLI Override: Download.IgnoreTags = %v", cfg.Download.IgnoreTags)
+	}
 	if flags.Download.SkipConfirmation != nil {
 		cfg.Download.SkipConfirmation = *flags.Download.SkipConfirmation
 		log.Debugf("[Initialize] CLI Override: Download.SkipConfirmation = %t", cfg.Download.SkipConfirmation)

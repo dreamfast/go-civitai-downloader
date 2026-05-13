@@ -14,7 +14,6 @@ type potentialDownload struct {
 	VersionName       string // Name of the model version
 	// Slices
 	OriginalImages []models.ModelImage // Images associated with this version
-	Tags           []string            // Tags for filtering
 	// Large structs
 	FullModel      models.Model        // Added: Full model details (used for Model Images)
 	FullVersion    models.ModelVersion // Full details of this specific version
