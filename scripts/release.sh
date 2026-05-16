@@ -32,6 +32,7 @@ VERSION=""
 SKIP_CHECKS=false
 DRY_RUN=false
 YES=false
+NOTES_SRC=""  # Custom release notes: file path or inline string
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -42,6 +43,14 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             DRY_RUN=true
             shift
+            ;;
+        --notes)
+            if [[ -z "${2:-}" ]]; then
+                log_error "--notes requires a value (file path or string)"
+                exit 1
+            fi
+            NOTES_SRC="$2"
+            shift 2
             ;;
         -y|--yes)
             YES=true
@@ -61,6 +70,8 @@ Arguments:
 Options:
   --no-check    Skip pre-release quality checks (fmt, vet, lint, tests).
   --dry-run     Show what would be done without executing.
+  --notes PATH  Use custom release notes from a file. If PATH does not
+                exist as a file, the value is used as the notes directly.
   -y, --yes     Skip confirmation prompt (fully non-interactive).
   -h, --help    Show this help message.
 
@@ -69,6 +80,8 @@ Examples:
   ./scripts/release.sh --no-check v10-05-2026-beta
   ./scripts/release.sh --yes              # auto-tag, no prompt
   ./scripts/release.sh                    # auto-generate date tag, prompt
+  ./scripts/release.sh --notes RELEASE_NOTES.md v16-05-2026
+  ./scripts/release.sh --notes "Bug fix release" v16-05-2026
 EOF
             exit 0
             ;;
@@ -314,7 +327,18 @@ fi
 # Generate release notes
 # ---------------------------------------------------------------------------
 notes_file="$(mktemp)"
-generate_notes "$VERSION" > "$notes_file"
+
+if [[ -n "$NOTES_SRC" ]]; then
+    if [[ -f "$NOTES_SRC" ]]; then
+        cp "$NOTES_SRC" "$notes_file"
+        log_info "Using custom release notes from file: $NOTES_SRC"
+    else
+        printf '%s' "$NOTES_SRC" > "$notes_file"
+        log_info "Using custom release notes from inline string"
+    fi
+else
+    generate_notes "$VERSION" > "$notes_file"
+fi
 
 log_info "Release notes preview:"
 echo "---"
