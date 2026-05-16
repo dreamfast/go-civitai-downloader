@@ -424,3 +424,113 @@ func TestAPIErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertImageAPIParamsToURLValues_Nsfw tests the NSFW and BrowsingLevel
+// parameter generation for the /api/v1/images endpoint.
+func TestConvertImageAPIParamsToURLValues_Nsfw(t *testing.T) {
+	tests := []struct {
+		name                string
+		nsfw                string
+		browsingLevel       int
+		expectNsfwParam     string // expected nsfw URL param value, empty means not present
+		expectBrowsingLevel string // expected browsingLevel URL param value, empty means not present
+	}{
+		{
+			name:                "empty nsfw defaults to browsingLevel=31 (all content)",
+			nsfw:                "",
+			browsingLevel:       0,
+			expectNsfwParam:     "",
+			expectBrowsingLevel: "31",
+		},
+		{
+			name:                "None maps to nsfw=false",
+			nsfw:                "None",
+			browsingLevel:       0,
+			expectNsfwParam:     "false",
+			expectBrowsingLevel: "",
+		},
+		{
+			name:                "none (lowercase) maps to nsfw=false",
+			nsfw:                "none",
+			browsingLevel:       0,
+			expectNsfwParam:     "false",
+			expectBrowsingLevel: "",
+		},
+		{
+			name:                "Soft passes through",
+			nsfw:                "Soft",
+			browsingLevel:       0,
+			expectNsfwParam:     "Soft",
+			expectBrowsingLevel: "",
+		},
+		{
+			name:                "Mature passes through",
+			nsfw:                "Mature",
+			browsingLevel:       0,
+			expectNsfwParam:     "Mature",
+			expectBrowsingLevel: "",
+		},
+		{
+			name:                "X passes through",
+			nsfw:                "X",
+			browsingLevel:       0,
+			expectNsfwParam:     "X",
+			expectBrowsingLevel: "",
+		},
+		{
+			name:                "true passes through",
+			nsfw:                "true",
+			browsingLevel:       0,
+			expectNsfwParam:     "true",
+			expectBrowsingLevel: "",
+		},
+		{
+			name:                "false passes through",
+			nsfw:                "false",
+			browsingLevel:       0,
+			expectNsfwParam:     "false",
+			expectBrowsingLevel: "",
+		},
+		{
+			name:                "browsingLevel=1 (PG) overrides nsfw",
+			nsfw:                "X",
+			browsingLevel:       1,
+			expectNsfwParam:     "",
+			expectBrowsingLevel: "1",
+		},
+		{
+			name:                "browsingLevel=3 (SFW) overrides nsfw",
+			nsfw:                "",
+			browsingLevel:       3,
+			expectNsfwParam:     "",
+			expectBrowsingLevel: "3",
+		},
+		{
+			name:                "browsingLevel=31 (All) overrides nsfw",
+			nsfw:                "None",
+			browsingLevel:       31,
+			expectNsfwParam:     "",
+			expectBrowsingLevel: "31",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := models.ImageAPIParameters{
+				Nsfw:          tt.nsfw,
+				BrowsingLevel: tt.browsingLevel,
+			}
+			values := ConvertImageAPIParamsToURLValues(params)
+
+			gotNsfw := values.Get("nsfw")
+			if gotNsfw != tt.expectNsfwParam {
+				t.Errorf("nsfw param: got %q, want %q", gotNsfw, tt.expectNsfwParam)
+			}
+
+			gotBrowsingLevel := values.Get("browsingLevel")
+			if gotBrowsingLevel != tt.expectBrowsingLevel {
+				t.Errorf("browsingLevel param: got %q, want %q", gotBrowsingLevel, tt.expectBrowsingLevel)
+			}
+		})
+	}
+}

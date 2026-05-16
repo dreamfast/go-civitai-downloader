@@ -76,6 +76,7 @@ const (
 	DefaultConfigImagesSaveMetadata        = true
 	DefaultConfigImagesDetectImageMimeType = true
 	DefaultConfigImagesPathPattern         = "{username}/{baseModel}" // Simple pattern using data from images API
+	DefaultConfigImagesBrowsingLevel       = 0                        // 0 = use Nsfw param, 31 = all levels
 
 	// Torrent specific defaults
 	DefaultConfigTorrentOutputDir         = "torrents"
@@ -159,6 +160,7 @@ func setViperDefaults(v *viper.Viper) {
 	v.SetDefault("images.savemetadata", DefaultConfigImagesSaveMetadata)
 	v.SetDefault("images.detectimagemimetype", DefaultConfigImagesDetectImageMimeType)
 	v.SetDefault("images.pathpattern", DefaultConfigImagesPathPattern)
+	v.SetDefault("images.browsinglevel", DefaultConfigImagesBrowsingLevel)
 
 	// Torrent defaults
 	v.SetDefault("torrent.outputdir", DefaultConfigTorrentOutputDir)
@@ -253,6 +255,7 @@ type CliImagesFlags struct {
 	Concurrency          *int    // -c
 	SaveMetadata         *bool   // --metadata
 	DisableImageMimeType *bool   // --disable-image-mime
+	BrowsingLevel        *int    // --browsing-level
 }
 
 type CliTorrentFlags struct {
@@ -317,6 +320,7 @@ func initializeDefaults() models.Config {
 			Page:                1,
 			Concurrency:         4,
 			DetectImageMimeType: true, // Enabled by default
+			BrowsingLevel:       0,    // 0 = use Nsfw setting
 		},
 		Torrent: models.TorrentConfig{
 			Concurrency: 4,
@@ -644,6 +648,10 @@ func applyImagesFlags(cfg *models.Config, flags CliFlags) {
 	if flags.Images.DisableImageMimeType != nil && *flags.Images.DisableImageMimeType {
 		cfg.Images.DetectImageMimeType = false
 		log.Debugf("[Config Init] CLI Override: Images.DetectImageMimeType = false (--disable-image-mime)")
+	}
+	if flags.Images.BrowsingLevel != nil {
+		cfg.Images.BrowsingLevel = *flags.Images.BrowsingLevel
+		log.Debugf("[Config Init] CLI Override: Images.BrowsingLevel = %d", cfg.Images.BrowsingLevel)
 	}
 }
 

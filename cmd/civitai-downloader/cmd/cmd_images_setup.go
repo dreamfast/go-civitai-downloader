@@ -19,6 +19,7 @@ var (
 	imagesConcurrencyFlag      int
 	imagesMetadataFlag         bool
 	imagesDisableImageMimeFlag bool
+	imagesBrowsingLevelFlag    int
 )
 
 func init() {
@@ -45,6 +46,8 @@ func init() {
 	imagesCmd.Flags().BoolVar(&imagesMetadataFlag, "metadata", false, "Save a .json metadata file alongside each downloaded image.")
 	// Add the disable-image-mime flag (default false; presence disables MIME detection)
 	imagesCmd.Flags().BoolVar(&imagesDisableImageMimeFlag, "disable-image-mime", false, "Disable MIME type detection; keep original URL-derived file extensions")
+	// Add the browsing-level flag for precise Civitai content filtering (bitmask: 1=PG, 3=SFW, 31=All)
+	imagesCmd.Flags().IntVar(&imagesBrowsingLevelFlag, "browsing-level", 0, "Civitai browsing level bitmask (1=PG, 3=SFW, 31=All). Overrides --nsfw when set.")
 
 	// Hidden flag for testing API URL generation
 	imagesCmd.Flags().Bool("debug-print-api-url", false, "Print the constructed API URL for image fetching and exit")

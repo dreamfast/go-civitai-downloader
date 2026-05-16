@@ -355,14 +355,25 @@ func ConvertImageAPIParamsToURLValues(queryParams models.ImageAPIParameters) url
 		values.Add("period", queryParams.Period)
 	}
 
-	// Handle Nsfw: Can be "None", "Soft", "Mature", "X", "true", "false".
-	// If "None", map to "false". Empty string means omit.
-	// Otherwise, use the string value directly.
-	if queryParams.Nsfw != "" {
-		if strings.ToLower(queryParams.Nsfw) == "none" {
-			values.Add("nsfw", "false")
+	// Handle BrowsingLevel: takes precedence over nsfw when set.
+	// Civitai bitmask values: 1=PG, 3=SFW(PG+PG13), 31=All(PG+PG13+R+X+XXX).
+	if queryParams.BrowsingLevel > 0 {
+		values.Add("browsingLevel", strconv.Itoa(queryParams.BrowsingLevel))
+		// When browsingLevel is set, nsfw param is ignored by the API.
+		// Don't send both to avoid confusion.
+	} else {
+		// Handle Nsfw: Can be "None", "Soft", "Mature", "X", "true", "false".
+		// Empty string means "show all content" — use browsingLevel=31 for reliable all-content filtering.
+		if queryParams.Nsfw != "" {
+			if strings.ToLower(queryParams.Nsfw) == "none" {
+				values.Add("nsfw", "false")
+			} else {
+				values.Add("nsfw", queryParams.Nsfw) // Pass "true", "false", "Soft", "Mature", "X" directly
+			}
 		} else {
-			values.Add("nsfw", queryParams.Nsfw) // Pass "true", "false", "Soft", "Mature", "X" directly
+			// Empty Nsfw = user wants all content (SFW + NSFW).
+			// Use browsingLevel=31 (all levels) since omitting nsfw defaults to SFW-only.
+			values.Add("browsingLevel", "31")
 		}
 	}
 
