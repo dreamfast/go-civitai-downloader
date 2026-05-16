@@ -34,7 +34,7 @@ func init() {
 	imagesCmd.Flags().IntVar(&imagesImageIDFlag, "image-id", 0, "Filter by specific Image ID.")
 	imagesCmd.Flags().StringVarP(&imagesUsernameFlag, "username", "u", "", "Filter by username.")
 	// Use string for nsfw flag to handle both boolean and enum values easily
-	imagesCmd.Flags().StringVar(&imagesNsfwFlag, "nsfw", "", "Filter by NSFW level (None, Soft, Mature, X) or boolean (true/false). Empty means all.")
+	imagesCmd.Flags().StringVar(&imagesNsfwFlag, flagNsfw, "", "Filter by NSFW level (None, Soft, Mature, X) or boolean (true/false). Empty means all.")
 	imagesCmd.Flags().StringVarP(&imagesSortFlag, "sort", "s", "Newest", "Sort order (Most Reactions, Most Comments, Newest).")
 	imagesCmd.Flags().StringVarP(&imagesPeriodFlag, "period", "p", "AllTime", "Time period for sorting (AllTime, Year, Month, Week, Day).")
 	imagesCmd.Flags().IntVar(&imagesPageFlag, "page", 1, "Starting page number (uses cursor-advance for images API).") // Images API uses cursor-based pagination; Page config triggers cursor-advance

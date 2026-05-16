@@ -73,7 +73,7 @@ func init() {
 	downloadCmd.Flags().StringSliceVarP(&downloadModelTypesFlag, "model-types", "m", []string{}, "Filter by model types (Checkpoint, LORA, etc.)")
 	downloadCmd.Flags().StringSliceVarP(&downloadBaseModelsFlag, "base-models", "b", []string{}, "Filter by base models (SD 1.5, SDXL 1.0, etc.)")
 	downloadCmd.Flags().StringVarP(&downloadUsernameFlag, "username", "u", "", "Filter by specific creator username")
-	downloadCmd.Flags().BoolVar(&downloadNsfwFlag, "nsfw", false, "Include NSFW models (overrides config)") // Default to false as override
+	downloadCmd.Flags().BoolVar(&downloadNsfwFlag, flagNsfw, false, "Include NSFW models (overrides config)") // Default to false as override
 	downloadCmd.Flags().IntVarP(&downloadLimitFlag, "limit", "l", 0, "Total number of models/files to download. 0 means unlimited. If not set, uses config value (defaulting to unlimited if also not in config).")
 	downloadCmd.Flags().IntVarP(&downloadMaxPagesFlag, "max-pages", "p", 0, "Maximum number of API pages to process (0 uses config default, which is 0 for no limit)")
 	downloadCmd.Flags().IntVar(&downloadMaxImagesFlag, "max-images", 0, "Maximum number of images to download per version (0 = unlimited)")
@@ -383,7 +383,7 @@ func confirmParameters(cmd *cobra.Command, cfg *models.Config, queryParams model
 		"allowDerivatives":      queryParams.AllowDerivatives,
 		"allowDifferentLicense": queryParams.AllowDifferentLicenses,
 		"allowCommercialUse":    queryParams.AllowCommercialUse,
-		"nsfw":                  queryParams.Nsfw,
+		flagNsfw:                queryParams.Nsfw,
 	}
 	queryJSON, _ := json.MarshalIndent(displayQueryParams, "", "  ")
 	fmt.Println(string(queryJSON))

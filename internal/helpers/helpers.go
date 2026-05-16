@@ -27,14 +27,19 @@ const (
 	ExtGIF  = ".gif"
 	ExtWebP = ".webp"
 	ExtMP4  = ".mp4"
+
+	MimeJPG  = "image/jpeg"
+	MimePNG  = "image/png"
+	MimeGIF  = "image/gif"
+	MimeWebP = "image/webp"
 )
 
 // imageMimeToExt maps known image MIME types to their file extensions.
 var imageMimeToExt = map[string]string{
-	"image/jpeg": ExtJPG,
-	"image/png":  ExtPNG,
-	"image/gif":  ExtGIF,
-	"image/webp": ExtWebP,
+	MimeJPG:  ExtJPG,
+	MimePNG:  ExtPNG,
+	MimeGIF:  ExtGIF,
+	MimeWebP: ExtWebP,
 }
 
 // CheckHash verifies the hash of a file against expected values.
@@ -199,18 +204,18 @@ var imageMagicSignatures = []struct {
 	{func(d []byte) bool {
 		return d[0] == 0x89 && d[1] == 0x50 && d[2] == 0x4E && d[3] == 0x47 &&
 			d[4] == 0x0D && d[5] == 0x0A && d[6] == 0x1A && d[7] == 0x0A
-	}, "image/png", 8},
+	}, MimePNG, 8},
 	{func(d []byte) bool {
 		return d[0] == 0xFF && d[1] == 0xD8 && d[2] == 0xFF
-	}, "image/jpeg", 3},
+	}, MimeJPG, 3},
 	{func(d []byte) bool {
 		return d[0] == 'G' && d[1] == 'I' && d[2] == 'F' &&
 			d[3] == '8' && (d[4] == '7' || d[4] == '9') && d[5] == 'a'
-	}, "image/gif", 6},
+	}, MimeGIF, 6},
 	{func(d []byte) bool {
 		return d[0] == 'R' && d[1] == 'I' && d[2] == 'F' && d[3] == 'F' &&
 			d[8] == 'W' && d[9] == 'E' && d[10] == 'B' && d[11] == 'P'
-	}, "image/webp", 12},
+	}, MimeWebP, 12},
 }
 
 // DetectImageTypeFromMagicBytes detects the MIME type of image data by checking

@@ -6,7 +6,7 @@ This is a command-line tool written in Go to download models from Civitai.com ba
 
 Note: While I can do my best to test out, there are so many combinations using the CivitAi API. If you have any issues feel free to open an issue and I'll check it out!
 
-Check out our current May 2026 release [here](https://github.com/dreamfast/go-civitai-downloader/releases/tag/v10-05-2026).
+Check out our current release [here](https://github.com/dreamfast/go-civitai-downloader/releases/tag/v16-05-2026).
 
 ## Features
 

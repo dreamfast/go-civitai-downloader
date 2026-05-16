@@ -124,7 +124,7 @@ func addDownloadFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVarP(&downloadModelTypesFlag, "model-types", "", []string{}, "Filter by model types (API, comma-separated or multiple flags)")
 	cmd.Flags().StringSliceVarP(&downloadBaseModelsFlag, "base-models", "", []string{}, "Filter by base models (API, comma-separated or multiple flags)")
 	cmd.Flags().StringVarP(&downloadUsernameFlag, "username", "", "", "Filter by username (API)")
-	cmd.Flags().BoolVarP(&downloadNsfwFlag, "nsfw", "", false, "Include NSFW models (API)") // Note: Cobra bool defaults to false if flag not present
+	cmd.Flags().BoolVarP(&downloadNsfwFlag, flagNsfw, "", false, "Include NSFW models (API)") // Note: Cobra bool defaults to false if flag not present
 	cmd.Flags().IntVarP(&downloadLimitFlag, "limit", "l", -1, "Limit number of models per page (-1 uses config, API)")
 	cmd.Flags().IntVarP(&downloadMaxPagesFlag, "max-pages", "p", -1, "Maximum number of pages to fetch (-1 uses config)")
 	cmd.Flags().StringVarP(&downloadSortFlag, "sort", "s", "", "Sort order (API, overrides config)")
@@ -154,7 +154,7 @@ func addImagesFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&imagesModelIDFlag, "model-id", 0, "Filter by specific model ID (API)")
 	cmd.Flags().IntVar(&imagesModelVersionIDFlag, "model-version-id", 0, "Filter by specific model version ID (API)")
 	cmd.Flags().StringVarP(&imagesUsernameFlag, "username", "u", "", "Filter by username (API)")
-	cmd.Flags().StringVar(&imagesNsfwFlag, "nsfw", "", "Filter by NSFW level (None, Soft, Mature, X, All - API, overrides config)")
+	cmd.Flags().StringVar(&imagesNsfwFlag, flagNsfw, "", "Filter by NSFW level (None, Soft, Mature, X, All - API, overrides config)")
 	cmd.Flags().StringVarP(&imagesSortFlag, "sort", "s", "", "Sort order (API, overrides config)")
 	cmd.Flags().StringVar(&imagesPeriodFlag, "period", "", "Sort period (API, overrides config)")
 	cmd.Flags().IntVarP(&imagesPageFlag, "page", "p", -1, "API page to start fetching from (-1 uses config)")

@@ -483,10 +483,12 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 
 	log.Debugf("[Initialize] Processing Download CLI flags: %+v", *flags.Download)
 
-	if flags.Download.Concurrency != nil {
-		cfg.Download.Concurrency = *flags.Download.Concurrency
-		log.Debugf("[Initialize] CLI Override: Download.Concurrency = %d", cfg.Download.Concurrency)
-	}
+	applyDownloadFlagSet(cfg, flags)
+	applyDownloadFlagBools(cfg, flags)
+	applyDownloadFlagSlices(cfg, flags)
+}
+
+func applyDownloadFlagSet(cfg *models.Config, flags CliFlags) {
 	if flags.Download.Tag != nil {
 		cfg.Download.Tag = *flags.Download.Tag
 		log.Debugf("[Initialize] CLI Override: Download.Tag = '%s'", cfg.Download.Tag)
@@ -495,21 +497,17 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 		cfg.Download.Query = *flags.Download.Query
 		log.Debugf("[Initialize] CLI Override: Download.Query = '%s'", cfg.Download.Query)
 	}
-	if flags.Download.ModelTypes != nil && len(*flags.Download.ModelTypes) > 0 {
-		cfg.Download.ModelTypes = *flags.Download.ModelTypes
-		log.Debugf("[Initialize] CLI Override: Download.ModelTypes = %v", cfg.Download.ModelTypes)
+	if flags.Download.Sort != nil {
+		cfg.Download.Sort = *flags.Download.Sort
+		log.Debugf("[Initialize] CLI Override: Download.Sort = '%s'", cfg.Download.Sort)
 	}
-	if flags.Download.BaseModels != nil && len(*flags.Download.BaseModels) > 0 {
-		cfg.Download.BaseModels = *flags.Download.BaseModels
-		log.Debugf("[Initialize] CLI Override: Download.BaseModels = %v", cfg.Download.BaseModels)
+	if flags.Download.Period != nil {
+		cfg.Download.Period = *flags.Download.Period
+		log.Debugf("[Initialize] CLI Override: Download.Period = '%s'", cfg.Download.Period)
 	}
-	if flags.Download.Username != nil {
-		cfg.Download.Usernames = []string{*flags.Download.Username}
-		log.Debugf("[Initialize] CLI Override: Download.Usernames = %v (from single username flag)", cfg.Download.Usernames)
-	}
-	if flags.Download.Nsfw != nil {
-		cfg.Download.Nsfw = *flags.Download.Nsfw
-		log.Debugf("[Initialize] CLI Override: Download.Nsfw = %t", cfg.Download.Nsfw)
+	if flags.Download.Concurrency != nil {
+		cfg.Download.Concurrency = *flags.Download.Concurrency
+		log.Debugf("[Initialize] CLI Override: Download.Concurrency = %d", cfg.Download.Concurrency)
 	}
 	if flags.Download.Limit != nil {
 		cfg.Download.Limit = *flags.Download.Limit
@@ -523,14 +521,6 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 		cfg.Download.MaxImages = *flags.Download.MaxImages
 		log.Debugf("[Initialize] CLI Override: Download.MaxImages = %d", cfg.Download.MaxImages)
 	}
-	if flags.Download.Sort != nil {
-		cfg.Download.Sort = *flags.Download.Sort
-		log.Debugf("[Initialize] CLI Override: Download.Sort = '%s'", cfg.Download.Sort)
-	}
-	if flags.Download.Period != nil {
-		cfg.Download.Period = *flags.Download.Period
-		log.Debugf("[Initialize] CLI Override: Download.Period = '%s'", cfg.Download.Period)
-	}
 	if flags.Download.ModelID != nil {
 		cfg.Download.ModelID = *flags.Download.ModelID
 		log.Debugf("[Initialize] CLI Override: Download.ModelID = %d", cfg.Download.ModelID)
@@ -538,6 +528,13 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 	if flags.Download.ModelVersionID != nil {
 		cfg.Download.ModelVersionID = *flags.Download.ModelVersionID
 		log.Debugf("[Initialize] CLI Override: Download.ModelVersionID = %d", cfg.Download.ModelVersionID)
+	}
+}
+
+func applyDownloadFlagBools(cfg *models.Config, flags CliFlags) {
+	if flags.Download.Nsfw != nil {
+		cfg.Download.Nsfw = *flags.Download.Nsfw
+		log.Debugf("[Initialize] CLI Override: Download.Nsfw = %t", cfg.Download.Nsfw)
 	}
 	if flags.Download.PrimaryOnly != nil {
 		cfg.Download.PrimaryOnly = *flags.Download.PrimaryOnly
@@ -554,18 +551,6 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 	if flags.Download.AllVersions != nil {
 		cfg.Download.AllVersions = *flags.Download.AllVersions
 		log.Debugf("[Initialize] CLI Override: Download.AllVersions = %t", cfg.Download.AllVersions)
-	}
-	if flags.Download.IgnoreBaseModels != nil {
-		cfg.Download.IgnoreBaseModels = *flags.Download.IgnoreBaseModels
-		log.Debugf("[Initialize] CLI Override: Download.IgnoreBaseModels = %v", cfg.Download.IgnoreBaseModels)
-	}
-	if flags.Download.IgnoreFileNameStrings != nil {
-		cfg.Download.IgnoreFileNameStrings = *flags.Download.IgnoreFileNameStrings
-		log.Debugf("[Initialize] CLI Override: Download.IgnoreFileNameStrings = %v", cfg.Download.IgnoreFileNameStrings)
-	}
-	if flags.Download.IgnoreTags != nil {
-		cfg.Download.IgnoreTags = *flags.Download.IgnoreTags
-		log.Debugf("[Initialize] CLI Override: Download.IgnoreTags = %v", cfg.Download.IgnoreTags)
 	}
 	if flags.Download.SkipConfirmation != nil {
 		cfg.Download.SkipConfirmation = *flags.Download.SkipConfirmation
@@ -590,6 +575,33 @@ func applyDownloadFlags(cfg *models.Config, flags CliFlags) {
 	if flags.Download.DownloadMetaOnly != nil {
 		cfg.Download.DownloadMetaOnly = *flags.Download.DownloadMetaOnly
 		log.Debugf("[Initialize] CLI Override: Download.DownloadMetaOnly = %t", cfg.Download.DownloadMetaOnly)
+	}
+}
+
+func applyDownloadFlagSlices(cfg *models.Config, flags CliFlags) {
+	if flags.Download.ModelTypes != nil && len(*flags.Download.ModelTypes) > 0 {
+		cfg.Download.ModelTypes = *flags.Download.ModelTypes
+		log.Debugf("[Initialize] CLI Override: Download.ModelTypes = %v", cfg.Download.ModelTypes)
+	}
+	if flags.Download.BaseModels != nil && len(*flags.Download.BaseModels) > 0 {
+		cfg.Download.BaseModels = *flags.Download.BaseModels
+		log.Debugf("[Initialize] CLI Override: Download.BaseModels = %v", cfg.Download.BaseModels)
+	}
+	if flags.Download.Username != nil {
+		cfg.Download.Usernames = []string{*flags.Download.Username}
+		log.Debugf("[Initialize] CLI Override: Download.Usernames = %v (from single username flag)", cfg.Download.Usernames)
+	}
+	if flags.Download.IgnoreBaseModels != nil {
+		cfg.Download.IgnoreBaseModels = *flags.Download.IgnoreBaseModels
+		log.Debugf("[Initialize] CLI Override: Download.IgnoreBaseModels = %v", cfg.Download.IgnoreBaseModels)
+	}
+	if flags.Download.IgnoreFileNameStrings != nil {
+		cfg.Download.IgnoreFileNameStrings = *flags.Download.IgnoreFileNameStrings
+		log.Debugf("[Initialize] CLI Override: Download.IgnoreFileNameStrings = %v", cfg.Download.IgnoreFileNameStrings)
+	}
+	if flags.Download.IgnoreTags != nil {
+		cfg.Download.IgnoreTags = *flags.Download.IgnoreTags
+		log.Debugf("[Initialize] CLI Override: Download.IgnoreTags = %v", cfg.Download.IgnoreTags)
 	}
 }
 

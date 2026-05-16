@@ -14,6 +14,7 @@ import (
 
 const (
 	logFormatText = "text"
+	flagNsfw      = "nsfw"
 )
 
 // cfgFile holds the path to the config file specified by the user
@@ -104,7 +105,7 @@ func applyDownloadFlags(cmd *cobra.Command, flags *config.CliFlags) {
 	if cmd.Flags().Changed("username") {
 		flags.Download.Username = &downloadUsernameFlag
 	}
-	if cmd.Flags().Changed("nsfw") {
+	if cmd.Flags().Changed(flagNsfw) {
 		flags.Download.Nsfw = &downloadNsfwFlag
 	}
 	if cmd.Flags().Changed("limit") {
@@ -194,7 +195,7 @@ func applyImagesFlags(cmd *cobra.Command, flags *config.CliFlags) {
 	if cmd.Flags().Changed("username") {
 		flags.Images.Username = &imagesUsernameFlag
 	}
-	if cmd.Flags().Changed("nsfw") {
+	if cmd.Flags().Changed(flagNsfw) {
 		flags.Images.Nsfw = &imagesNsfwFlag
 	}
 	if cmd.Flags().Changed("sort") {
