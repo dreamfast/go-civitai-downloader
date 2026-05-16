@@ -189,57 +189,49 @@ func CheckAndMakeDir(dir string) bool {
 	return true
 }
 
-// CorrectPathBasedOnImageType checks the MIME type of a file and corrects the extension
-// in the final path if it doesn't match the detected image type.
-// It only corrects for common image types (jpg, png, gif, webp).
-// Returns the corrected final path and an error if reading fails.
-func CorrectPathBasedOnImageType(tempFilePath, finalFilePath string) (string, error) {
-	originalExt := strings.ToLower(filepath.Ext(finalFilePath))
+// imageMagicSignatures defines magic byte signatures for common image formats.
+// Each entry contains the minimum data length, the signature check function, and the MIME type.
+var imageMagicSignatures = []struct {
+	Check    func(data []byte) bool
+	MIMEType string
+	MinLen   int
+}{
+	{func(d []byte) bool {
+		return d[0] == 0x89 && d[1] == 0x50 && d[2] == 0x4E && d[3] == 0x47 &&
+			d[4] == 0x0D && d[5] == 0x0A && d[6] == 0x1A && d[7] == 0x0A
+	}, "image/png", 8},
+	{func(d []byte) bool {
+		return d[0] == 0xFF && d[1] == 0xD8 && d[2] == 0xFF
+	}, "image/jpeg", 3},
+	{func(d []byte) bool {
+		return d[0] == 'G' && d[1] == 'I' && d[2] == 'F' &&
+			d[3] == '8' && (d[4] == '7' || d[4] == '9') && d[5] == 'a'
+	}, "image/gif", 6},
+	{func(d []byte) bool {
+		return d[0] == 'R' && d[1] == 'I' && d[2] == 'F' && d[3] == 'F' &&
+			d[8] == 'W' && d[9] == 'E' && d[10] == 'B' && d[11] == 'P'
+	}, "image/webp", 12},
+}
 
-	fRead, errRead := os.Open(SanitizePath(tempFilePath))
-	if errRead != nil {
-		log.WithError(errRead).Warnf("Could not open file %s for MIME type detection, using original extension.", tempFilePath)
-		// Return original path, don't treat this as a fatal error for the caller
-		return finalFilePath, nil
-	}
-	defer func() { _ = fRead.Close() }()
-	// Read the first 512 bytes for MIME detection
-	buff := make([]byte, 512)
-	n, errReadBytes := fRead.Read(buff)
-	if errReadBytes != nil && errReadBytes != io.EOF {
-		log.WithError(errReadBytes).Warnf("Could not read from file %s for MIME type detection, using original extension.", tempFilePath)
-		// Return original path
-		return finalFilePath, nil
-	}
-
-	// Only use the bytes actually read
-	mimeType := http.DetectContentType(buff[:n])
-	// Extract the main type (e.g., "image/jpeg")
-	mainMimeType := strings.Split(mimeType, ";")[0]
-
-	correctedFinalPath := finalFilePath // Default to original
-
-	if detectedExt, ok := imageMimeToExt[mainMimeType]; ok {
-		log.Debugf("Detected MIME type: %s -> Extension: %s for %s", mimeType, detectedExt, tempFilePath)
-
-		// Check for mismatch, BUT allow .jpeg for image/jpeg
-		mismatch := originalExt != detectedExt
-		if mismatch && mainMimeType == "image/jpeg" && originalExt == ".jpeg" {
-			mismatch = false // Allow .jpeg extension for jpeg content
-			log.Debugf("Original extension '.jpeg' is valid for detected type 'image/jpeg'. No correction needed.")
+// DetectImageTypeFromMagicBytes detects the MIME type of image data by checking
+// magic byte signatures first (more reliable for short reads), then falling back
+// to http.DetectContentType. Returns the MIME type string (e.g., "image/png").
+func DetectImageTypeFromMagicBytes(data []byte) string {
+	// Check magic byte signatures first — these are more reliable than
+	// http.DetectContentType for image files and work with short reads.
+	for _, sig := range imageMagicSignatures {
+		if len(data) >= sig.MinLen && sig.Check(data) {
+			return sig.MIMEType
 		}
-
-		if mismatch { // Correct only if it's a real mismatch
-			correctedFinalPath = strings.TrimSuffix(finalFilePath, originalExt) + detectedExt
-			log.Warnf("Original extension '%s' differs from detected image type '%s'. Correcting final path to: %s", originalExt, detectedExt, correctedFinalPath)
-		} else if originalExt == detectedExt { // Log if it matched exactly
-			log.Debugf("Original extension '%s' matches detected image type '%s'. No path correction needed.", originalExt, detectedExt)
-		}
-	} else {
-		log.Debugf("Detected MIME type '%s' for %s is not in the recognized image map. Using original extension '%s'.", mimeType, tempFilePath, originalExt)
 	}
 
-	return correctedFinalPath, nil
+	// Fall back to Go's built-in MIME detection (WHATWG MIME sniffing)
+	mimeType := http.DetectContentType(data)
+	// Strip parameters (e.g., "text/plain; charset=utf-8" → "text/plain")
+	if idx := strings.Index(mimeType, ";"); idx != -1 {
+		mimeType = strings.TrimSpace(mimeType[:idx])
+	}
+	return mimeType
 }
 
 // -- Hashing Helper --

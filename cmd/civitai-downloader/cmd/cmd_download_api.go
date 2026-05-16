@@ -243,6 +243,20 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 	log.Infof("Successfully fetched details for version %d (%s) of model %s (%s)",
 		versionResponse.ID, versionResponse.Name, versionResponse.Model.Name, versionResponse.Model.Type)
 
+	// Check tags before proceeding — requires fetching parent model details.
+	if len(cfg.Download.IgnoreTags) > 0 {
+		log.Debugf("IgnoreTags specified, fetching full model details for tag check...")
+		fullModelDetails, err := apiClient.GetModelDetails(versionResponse.ModelId)
+		if err != nil {
+			log.WithError(err).Warnf("Failed to fetch model details for tag check. Proceeding without tag filtering.")
+		} else {
+			log.Debugf("Successfully fetched model details for tag check. Model has %d tags.", len(fullModelDetails.Tags))
+			if shouldSkipModelForTags(fullModelDetails, cfg) {
+				return make([]potentialDownload, 0), 0, nil
+			}
+		}
+	}
+
 	if !passesBaseModelsFilter(versionResponse, cfg) {
 		return make([]potentialDownload, 0), 0, nil
 	}
@@ -286,7 +300,7 @@ func handleSingleVersionDownload(versionID int, db *database.DB, apiClient *api.
 			FullVersion:       versionWithoutFilesImages,
 			ModelVersionID:    versionResponse.ID,
 			File:              file,
-			TargetFilepath:    targetPath, // Use calculated full path
+			TargetFilepath:    targetPath,
 			FinalBaseFilename: finalBaseFilename,
 			OriginalImages:    versionResponse.Images,
 			BaseModel:         versionResponse.BaseModel,
@@ -337,6 +351,11 @@ func handleSingleModelDownload(modelID int, db *database.DB, apiClient *api.Clie
 
 	log.Infof("Successfully fetched details for model %s (ID: %d, Type: %s, Creator: %s)",
 		modelResponse.Name, modelResponse.ID, modelResponse.Type, modelResponse.Creator.Username)
+
+	// Check if model should be skipped based on tag filters
+	if shouldSkipModelForTags(modelResponse, cfg) {
+		return make([]potentialDownload, 0), 0, nil
+	}
 
 	// --- Model Images Processing --- START ---
 	if cfg.Download.SaveModelImages && imageDownloader != nil {
@@ -729,6 +748,10 @@ func processModelsOnPage(models []models.Model, apiClient *api.Client, cfg *mode
 			continue
 		}
 
+		if shouldSkipModelForTags(model, cfg) {
+			continue
+		}
+
 		fullModelDetails, err := fetchFullModelDetails(model.ID, apiClient)
 		if err != nil {
 			continue
@@ -803,6 +826,26 @@ func passesBaseModelsFilter(version models.ModelVersion, cfg *models.Config) boo
 
 	log.Infof("Skipping version %d (%s): BaseModel '%s' does not match any configured BaseModels %v.",
 		version.ID, version.Name, version.BaseModel, cfg.Download.BaseModels)
+	return false
+}
+
+// shouldSkipModelForTags checks if a model should be skipped based on tag filters.
+// Uses exact case-insensitive matching via helpers.StringSliceContains.
+func shouldSkipModelForTags(model models.Model, cfg *models.Config) bool {
+	if len(cfg.Download.IgnoreTags) == 0 || len(model.Tags) == 0 {
+		return false
+	}
+
+	for _, ignoredTag := range cfg.Download.IgnoreTags {
+		if ignoredTag == "" {
+			continue
+		}
+		if helpers.StringSliceContains(model.Tags, ignoredTag) {
+			log.Debugf("Skipping model %s (ID: %d) due to ignored tag: '%s'", model.Name, model.ID, ignoredTag)
+			return true
+		}
+	}
+
 	return false
 }
 

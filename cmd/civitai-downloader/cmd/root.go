@@ -146,6 +146,9 @@ func applyDownloadFlags(cmd *cobra.Command, flags *config.CliFlags) {
 	if cmd.Flags().Changed("ignore-filename-strings") {
 		flags.Download.IgnoreFileNameStrings = &downloadIgnoreFileNameStringsFlag
 	}
+	if cmd.Flags().Changed("ignore-tags") {
+		flags.Download.IgnoreTags = &downloadIgnoreTagsFlag
+	}
 	if cmd.Flags().Changed("yes") {
 		flags.Download.SkipConfirmation = &downloadYesFlag
 	}
@@ -218,6 +221,9 @@ func applyImagesFlags(cmd *cobra.Command, flags *config.CliFlags) {
 	if cmd.Flags().Changed("disable-image-mime") {
 		flags.Images.DisableImageMimeType = &imagesDisableImageMimeFlag
 	}
+	if cmd.Flags().Changed("browsing-level") {
+		flags.Images.BrowsingLevel = &imagesBrowsingLevelFlag
+	}
 }
 
 // applyDownloadFlagsFromGlobals applies download flags by checking global variables against their defaults
@@ -286,6 +292,9 @@ func applyDownloadFlagsFromGlobals(flags *config.CliFlags) {
 	}
 	if len(downloadIgnoreFileNameStringsFlag) > 0 {
 		flags.Download.IgnoreFileNameStrings = &downloadIgnoreFileNameStringsFlag
+	}
+	if len(downloadIgnoreTagsFlag) > 0 {
+		flags.Download.IgnoreTags = &downloadIgnoreTagsFlag
 	}
 	if downloadYesFlag {
 		flags.Download.SkipConfirmation = &downloadYesFlag
@@ -357,6 +366,9 @@ func applyImagesFlagsFromGlobals(flags *config.CliFlags) {
 	}
 	if imagesDisableImageMimeFlag {
 		flags.Images.DisableImageMimeType = &imagesDisableImageMimeFlag
+	}
+	if imagesBrowsingLevelFlag > 0 {
+		flags.Images.BrowsingLevel = &imagesBrowsingLevelFlag
 	}
 }
 

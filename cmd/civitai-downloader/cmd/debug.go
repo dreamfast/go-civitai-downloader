@@ -137,6 +137,7 @@ func addDownloadFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&downloadAllVersionsFlag, "all-versions", "a", false, "Download all versions of a model (requires --model-id)")
 	cmd.Flags().StringSliceVar(&downloadIgnoreBaseModelsFlag, "ignore-base-models", []string{}, "Base models to ignore (Client Filter, comma-separated or multiple flags)")
 	cmd.Flags().StringSliceVar(&downloadIgnoreFileNameStringsFlag, "ignore-filename-strings", []string{}, "Substrings in filenames to ignore (Client Filter, comma-separated or multiple flags)")
+	cmd.Flags().StringSliceVar(&downloadIgnoreTagsFlag, "ignore-tags", []string{}, "Tags to ignore (Client Filter, comma-separated or multiple flags)")
 	cmd.Flags().BoolVarP(&downloadYesFlag, "yes", "y", false, "Skip confirmation prompts")
 	cmd.Flags().BoolVar(&downloadMetadataFlag, "metadata", false, "Save model metadata file")
 	cmd.Flags().BoolVar(&downloadModelInfoFlag, "model-info", false, "Save full model info file")

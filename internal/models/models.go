@@ -159,6 +159,7 @@ type (
 		Usernames             []string `toml:"Usernames"`
 		IgnoreBaseModels      []string `toml:"IgnoreBaseModels"`
 		IgnoreFileNameStrings []string `toml:"IgnoreFileNameStrings"`
+		IgnoreTags            []string `toml:"IgnoreTags"`
 		// Integers
 		Concurrency    int `toml:"Concurrency"`
 		Limit          int `toml:"Limit"`
@@ -199,6 +200,7 @@ type (
 		Page           int `toml:"Page"`
 		MaxPages       int `toml:"MaxPages"`
 		Concurrency    int `toml:"Concurrency"`
+		BrowsingLevel  int `toml:"BrowsingLevel"` // Civitai browsing level bitmask (0=use Nsfw param, 1=PG, 3=SFW, 31=All)
 		// Bools
 		SaveMetadata        bool `toml:"Metadata"`
 		DetectImageMimeType bool `toml:"DetectImageMimeType"`
@@ -428,14 +430,15 @@ type (
 		Username string `json:"username,omitempty"`
 		Sort     string `json:"sort,omitempty"`   // e.g., "Newest", "Most Reactions"
 		Period   string `json:"period,omitempty"` // e.g., "AllTime", "Day"
-		Nsfw     string `json:"nsfw,omitempty"`   // API values: "None", "Soft", "Mature", "X", "true", "false". Empty means omit.
+		Nsfw     string `json:"nsfw,omitempty"`   // API values: "None", "Soft", "Mature", "X", "true", "false". Empty means use BrowsingLevel.
 		Cursor   string `json:"cursor,omitempty"`
 		// Integers
 		ImageID        int `json:"imageId,omitempty"` // Filter by specific image ID
 		ModelID        int `json:"modelId,omitempty"`
 		ModelVersionID int `json:"modelVersionId,omitempty"`
 		PostID         int `json:"postId,omitempty"`
-		Limit          int `json:"limit,omitempty"` // API default is 100, max 200 for images. 0 could mean API default.
+		Limit          int `json:"limit,omitempty"`         // API default is 100, max 200 for images. 0 could mean API default.
+		BrowsingLevel  int `json:"browsingLevel,omitempty"` // Civitai browsing level bitmask. Takes precedence over nsfw.
 	}
 )
 

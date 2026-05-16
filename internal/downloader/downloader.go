@@ -286,7 +286,7 @@ func detectMimeAndRename(tempFilePath, finalPath string) (string, error) {
 		return "", fmt.Errorf("%w: reading temp file for mime detection: %w", ErrFileSystem, err)
 	}
 
-	mimeType := http.DetectContentType(buffer[:n])
+	mimeType := helpers.DetectImageTypeFromMagicBytes(buffer[:n])
 	log.Debugf("Detected MIME type for %s: %s", tempFilePath, mimeType)
 
 	// Close the file before renaming - required on Windows where open handles block rename

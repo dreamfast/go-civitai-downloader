@@ -298,10 +298,11 @@ func CreateImageQueryParams(cfg *models.Config) models.ImageAPIParameters {
 		Sort:           cfg.Images.Sort,
 		Period:         cfg.Images.Period,
 		Nsfw:           cfg.Images.Nsfw,
+		BrowsingLevel:  cfg.Images.BrowsingLevel,
 	}
 
-	log.Debugf("Created Image API Params: ImageID=%d, ModelID=%d, ModelVersionID=%d, PostID=%d, Username='%s', Limit=%d, Sort='%s', Period='%s', Nsfw='%s'",
-		params.ImageID, params.ModelID, params.ModelVersionID, params.PostID, params.Username, params.Limit, params.Sort, params.Period, params.Nsfw)
+	log.Debugf("Created Image API Params: ImageID=%d, ModelID=%d, ModelVersionID=%d, PostID=%d, Username='%s', Limit=%d, Sort='%s', Period='%s', Nsfw='%s', BrowsingLevel=%d",
+		params.ImageID, params.ModelID, params.ModelVersionID, params.PostID, params.Username, params.Limit, params.Sort, params.Period, params.Nsfw, params.BrowsingLevel)
 	return params
 }
 
@@ -346,6 +347,7 @@ func confirmConfiguration(cfg *models.Config) {
 			"Period":         effectiveAPIParamsForDisplay.Period,
 			"Sort":           effectiveAPIParamsForDisplay.Sort,
 			"NSFW":           effectiveAPIParamsForDisplay.Nsfw,
+			"BrowsingLevel":  effectiveAPIParamsForDisplay.BrowsingLevel,
 			"MaxPages":       cfg.Images.MaxPages,
 			"SaveMetadata":   cfg.Images.SaveMetadata,
 		}
