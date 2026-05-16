@@ -642,7 +642,8 @@ DatabasePath = "%s"
 	}
 }
 
-// TestRealDownload_NsfwFlagApplied validates that --nsfw flag is included in the API URL.
+// TestRealDownload_NsfwFlagApplied validates that --nsfw and --browsing-level flags
+// are correctly reflected in the API URL.
 func TestRealDownload_NsfwFlagApplied(t *testing.T) {
 	apiKey := skipIfNoAPIKey(t)
 
@@ -651,7 +652,7 @@ func TestRealDownload_NsfwFlagApplied(t *testing.T) {
 
 	tempDir := t.TempDir()
 
-	// Test 1: --nsfw="" should omit nsfw param from URL
+	// Test 1: --nsfw="" should send browsingLevel=31 (all content) instead of nsfw param
 	output, err := runCLIWithTimeout(t, binaryPath, []string{
 		"--save-path", tempDir,
 		"images",
@@ -665,9 +666,13 @@ func TestRealDownload_NsfwFlagApplied(t *testing.T) {
 		t.Fatalf("Command failed: %v", err)
 	}
 
-	// The URL should NOT contain "nsfw=" when --nsfw is empty
+	// The URL should contain browsingLevel=31 when --nsfw is empty
+	if !strings.Contains(output, "browsingLevel=31") {
+		t.Errorf("Expected browsingLevel=31 when --nsfw='', got: %s", output)
+	}
+	// Should NOT contain nsfw= when browsingLevel is used
 	if strings.Contains(output, "nsfw=") {
-		t.Errorf("Expected nsfw param to be omitted when --nsfw='', but URL contained it: %s", output)
+		t.Errorf("Expected no nsfw param when browsingLevel is used, but URL contained it: %s", output)
 	}
 
 	// Test 2: --nsfw="Soft" should include nsfw=Soft in URL
@@ -686,6 +691,42 @@ func TestRealDownload_NsfwFlagApplied(t *testing.T) {
 
 	if !strings.Contains(output, "nsfw=Soft") {
 		t.Errorf("Expected nsfw=Soft in URL, got: %s", output)
+	}
+
+	// Test 3: --browsing-level=31 should send browsingLevel=31
+	output, err = runCLIWithTimeout(t, binaryPath, []string{
+		"--save-path", tempDir,
+		"images",
+		"--debug-print-api-url",
+		"--browsing-level", "31",
+		"--username", "Yofaraway",
+	}, append(os.Environ(), "CIVITAI_API_KEY="+apiKey))
+
+	if err != nil {
+		t.Logf("Output: %s", output)
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	if !strings.Contains(output, "browsingLevel=31") {
+		t.Errorf("Expected browsingLevel=31 in URL, got: %s", output)
+	}
+
+	// Test 4: --nsfw="None" should send nsfw=false
+	output, err = runCLIWithTimeout(t, binaryPath, []string{
+		"--save-path", tempDir,
+		"images",
+		"--debug-print-api-url",
+		"--nsfw", "None",
+		"--username", "Yofaraway",
+	}, append(os.Environ(), "CIVITAI_API_KEY="+apiKey))
+
+	if err != nil {
+		t.Logf("Output: %s", output)
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	if !strings.Contains(output, "nsfw=false") {
+		t.Errorf("Expected nsfw=false when --nsfw='None', got: %s", output)
 	}
 }
 
