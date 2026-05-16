@@ -41,6 +41,68 @@ Civitai is a beast of its own, especially the API. There are some things to note
 * I've tested this fine downloading all WAN Video LORAs, but I can't guarantee it will work for all model categories. So far so good.
 * Sometimes .tmp files are left over, probably due to failed hash or downloads. You can run `clean` to remove them.
 
+## Content Filtering
+
+The `images` command supports two Civitai content filtering systems for controlling what kind of images are downloaded.
+
+### `--nsfw` Flag
+
+The legacy NSFW filter accepts these values:
+
+| Value | Effect |
+|:------|:-------|
+| `None` | SFW only (default). Sends `nsfw=false`. |
+| `Soft` | Includes Soft NSFW content. Sends `nsfw=Soft`. |
+| `Mature` | Includes Mature NSFW content. Sends `nsfw=Mature`. |
+| `X` | Includes X-rated content. Sends `nsfw=X`. |
+| `true` | Includes all NSFW content. Sends `nsfw=true`. |
+| `false` | SFW only. Sends `nsfw=false`. |
+| `""` (empty) | All content (SFW + NSFW). Sends `browsingLevel=31`. |
+
+```bash
+# SFW only (default)
+./civitai-downloader images --username exampleUser --nsfw "None"
+
+# Include Soft NSFW
+./civitai-downloader images --username exampleUser --nsfw "Soft"
+
+# Download all content including NSFW
+./civitai-downloader images --username exampleUser --nsfw ""
+```
+
+### `--browsing-level` Flag
+
+Civitai's newer browsing level system uses a bitmask to control content visibility. This takes precedence over `--nsfw` when set.
+
+| Browsing Level | Bitmask | Content Visible |
+|:---------------|:--------|:----------------|
+| PG | `1` | Safe content only |
+| SFW | `3` | PG + PG13 |
+| All | `31` | PG + PG13 + R + X + XXX (everything) |
+
+The bitmask values are additive: `31 = 1 (PG) + 2 (PG13) + 4 (R) + 8 (X) + 16 (XXX)`.
+
+```bash
+# PG only (most restrictive)
+./civitai-downloader images --username exampleUser --browsing-level 1
+
+# SFW (PG + PG13)
+./civitai-downloader images --username exampleUser --browsing-level 3
+
+# All content (equivalent to --nsfw "")
+./civitai-downloader images --username exampleUser --browsing-level 31
+```
+
+### Config File
+
+Both options can also be set in `config.toml`:
+
+```toml
+[images]
+Nsfw = ""            # Empty = all content. "None" = SFW only (default).
+BrowsingLevel = 31   # Overrides Nsfw when set to non-zero.
+```
+
 ## Authentication
 
 ### API Key
@@ -133,7 +195,9 @@ Generally arguments passed into the application will override the config file se
 | `BaseModels`            | `[]string` | `[]`                 | Default base models to query (e.g., `["SDXL 1.0"]`). Empty means all base models.                     |
 | `IgnoreBaseModels`      | `[]string` | `[]`                 | List of base model strings to ignore (case-insensitive substring match). (`--ignore-base-models` flag) |
 | `IgnoreTags`            | `[]string` | `[]`                 | List of tags to ignore (exact match, case-insensitive). (`--ignore-tags` flag) |
-| `Nsfw`                  | `bool`     | `false`              | Default setting for including NSFW models in API queries.                                               |
+| `Nsfw`                  | `bool`     | `false`              | Default setting for including NSFW models in download API queries.                                      |
+| `Images.Nsfw`           | `string`   | `"None"`             | NSFW filter for the images command (None, Soft, Mature, X, true, false, or empty for all). See [Content Filtering](#content-filtering). |
+| `Images.BrowsingLevel`  | `int`      | `0`                  | Civitai browsing level bitmask for the images command. See [Content Filtering](#content-filtering).     |
 | `ModelVersionID`        | `int`      | `0`                  | Default model version ID to download (0 = disabled, overrides other filters).                           |
 | `AllVersions`           | `bool`     | `false`              | Download all versions of matched models, not just the latest. (`--all-versions` flag)                   |
 | `PrimaryOnly`           | `bool`     | `false`              | Only download the file marked as "primary" for a model version. (`--primary-only` flag)                 |
@@ -278,7 +342,8 @@ Downloads images directly from the `/api/v1/images` endpoint based on various fi
 *   `--model-id int`: Filter by Model ID.
 *   `--model-version-id int`: Filter by Model Version ID.
 *   `-u, --username string`: Filter by username.
-*   `--nsfw string`: Filter by NSFW level (None, Soft, Mature, X) or boolean (true/false). Empty means all.
+*   `--nsfw string`: Filter by NSFW level (None, Soft, Mature, X) or boolean (true/false). Empty means all. See [Content Filtering](#content-filtering).
+*   `--browsing-level int`: Civitai browsing level bitmask. Overrides `--nsfw` when set. See [Content Filtering](#content-filtering).
 *   `-s, --sort string`: Sort order (Most Reactions, Most Comments, Newest, default "Newest").
 *   `-p, --period string`: Time period for sorting (AllTime, Year, Month, Week, Day, default "AllTime").
 *   `--max-pages int`: Maximum number of API pages to fetch (0 for no limit).
