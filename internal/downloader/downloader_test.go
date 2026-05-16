@@ -487,6 +487,46 @@ func TestDownloadImage_MimeDetectionDisabled(t *testing.T) {
 	}
 }
 
+// TestDownloadImage_PngDetectedWithoutContentType tests that PNG content is correctly
+// detected via magic bytes even when the server sends no Content-Type header.
+// This matches real Civitai CDN behavior where images may lack proper Content-Type.
+func TestDownloadImage_PngDetectedWithoutContentType(t *testing.T) {
+	// PNG magic bytes with IHDR chunk header for a more realistic PNG file
+	pngData := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1 image
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, // 8-bit RGB
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Deliberately do NOT set Content-Type header
+		w.Write(pngData)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "", "")
+
+	// URL ends in .jpeg (like Civitai URLs) but content is PNG
+	imageURL := server.URL + "/test_image.jpeg"
+	filename, err := downloader.DownloadImage(tempDir, imageURL)
+	if err != nil {
+		t.Fatalf("DownloadImage failed: %v", err)
+	}
+
+	// The filename should be corrected to .png based on magic byte detection
+	if !strings.HasSuffix(filename, ".png") {
+		t.Errorf("Expected filename to end with .png (magic-byte detected), got: %s", filename)
+	}
+
+	// Verify the file exists
+	finalPath := filepath.Join(tempDir, filename)
+	if _, err := os.Stat(finalPath); os.IsNotExist(err) {
+		t.Errorf("File does not exist at expected path: %s", finalPath)
+	}
+}
+
 // Benchmark test for download performance
 func BenchmarkDownloadFile(b *testing.B) {
 	// Create test data

@@ -414,92 +414,65 @@ func TestCheckHash(t *testing.T) {
 	})
 }
 
-func TestCorrectPathBasedOnImageType(t *testing.T) {
-	// Note: CorrectPathBasedOnImageType uses SanitizePath which removes leading slashes
-	// So we need to change to a temp directory and use relative paths
-
-	// Save current directory
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
+func TestDetectImageTypeFromMagicBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		expected string
+	}{
+		{
+			name:     "PNG magic bytes",
+			data:     []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00},
+			expected: "image/png",
+		},
+		{
+			name:     "JPEG magic bytes",
+			data:     []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46},
+			expected: "image/jpeg",
+		},
+		{
+			name:     "GIF87a magic bytes",
+			data:     []byte{'G', 'I', 'F', '8', '7', 'a'},
+			expected: "image/gif",
+		},
+		{
+			name:     "GIF89a magic bytes",
+			data:     []byte{'G', 'I', 'F', '8', '9', 'a'},
+			expected: "image/gif",
+		},
+		{
+			name:     "WebP magic bytes",
+			data:     []byte{'R', 'I', 'F', 'F', 0x00, 0x00, 0x00, 0x00, 'W', 'E', 'B', 'P'},
+			expected: "image/webp",
+		},
+		{
+			name:     "empty buffer falls back to DetectContentType",
+			data:     []byte{},
+			expected: "text/plain",
+		},
+		{
+			name:     "short buffer (2 bytes) falls back",
+			data:     []byte{0x00, 0x01},
+			expected: "application/octet-stream",
+		},
+		{
+			name:     "non-image binary data falls back",
+			data:     []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
+			expected: "application/octet-stream",
+		},
+		{
+			name:     "partial PNG signature (4 bytes) falls back to DetectContentType",
+			data:     []byte{0x89, 0x50, 0x4E, 0x47},
+			expected: "text/plain", // http.DetectContentType doesn't recognize PNG from just 4 bytes
+		},
 	}
 
-	tempDir := t.TempDir()
-	if err := os.Chdir(tempDir); err != nil {
-		t.Fatalf("Failed to change to temp directory: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := DetectImageTypeFromMagicBytes(tt.data)
+			if result != tt.expected {
+				t.Errorf("DetectImageTypeFromMagicBytes() = %q, want %q", result, tt.expected)
+			}
+		})
 	}
-	defer os.Chdir(origDir)
-
-	t.Run("file not found gracefully handled", func(t *testing.T) {
-		// Use a relative nonexistent path
-		result, err := CorrectPathBasedOnImageType("nonexistent/file.jpg", "path/to/file.jpg")
-		if err != nil {
-			t.Errorf("CorrectPathBasedOnImageType() unexpected error: %v", err)
-		}
-		// Should return original path when file not found
-		if result != "path/to/file.jpg" {
-			t.Errorf("CorrectPathBasedOnImageType() = %q, want %q", result, "path/to/file.jpg")
-		}
-	})
-
-	t.Run("empty file returns original path", func(t *testing.T) {
-		emptyFile := "empty.jpg"
-		err := os.WriteFile(emptyFile, []byte{}, 0644)
-		if err != nil {
-			t.Fatalf("Failed to create empty file: %v", err)
-		}
-
-		outputPath := "output.jpg"
-		result, err := CorrectPathBasedOnImageType(emptyFile, outputPath)
-		if err != nil {
-			t.Errorf("CorrectPathBasedOnImageType() unexpected error: %v", err)
-		}
-		// With empty file, MIME detection returns "text/plain; charset=utf-8" or similar
-		// so it should return the original path unchanged
-		if result != outputPath {
-			t.Logf("Result path: %q (MIME detection may have changed extension)", result)
-		}
-	})
-
-	t.Run("jpeg file detection", func(t *testing.T) {
-		// Create a minimal JPEG file (JPEG magic bytes: FF D8 FF)
-		jpegFile := "test.jpg"
-		jpegMagic := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00}
-		err := os.WriteFile(jpegFile, jpegMagic, 0644)
-		if err != nil {
-			t.Fatalf("Failed to create JPEG file: %v", err)
-		}
-
-		outputPath := "output_jpeg.jpg"
-		result, err := CorrectPathBasedOnImageType(jpegFile, outputPath)
-		if err != nil {
-			t.Errorf("CorrectPathBasedOnImageType() unexpected error: %v", err)
-		}
-		// JPEG detected, extension matches, should return same path
-		if result != outputPath {
-			t.Errorf("CorrectPathBasedOnImageType() = %q, want %q", result, outputPath)
-		}
-	})
-
-	t.Run("png file with wrong extension", func(t *testing.T) {
-		// Create a minimal PNG file (PNG magic bytes)
-		pngFile := "test_png.dat"
-		pngMagic := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-		err := os.WriteFile(pngFile, pngMagic, 0644)
-		if err != nil {
-			t.Fatalf("Failed to create PNG file: %v", err)
-		}
-
-		// Original path has .jpg extension but file is PNG
-		outputPath := "output_png.jpg"
-		result, err := CorrectPathBasedOnImageType(pngFile, outputPath)
-		if err != nil {
-			t.Errorf("CorrectPathBasedOnImageType() unexpected error: %v", err)
-		}
-		// Should correct the extension to .png
-		expectedPath := "output_png.png"
-		if result != expectedPath {
-			t.Errorf("CorrectPathBasedOnImageType() = %q, want %q", result, expectedPath)
-		}
-	})
 }
