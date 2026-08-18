@@ -476,3 +476,106 @@ func TestDetectImageTypeFromMagicBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple ASCII filename unchanged",
+			input:    "model_file.safetensors",
+			expected: "model_file.safetensors",
+		},
+		{
+			name:     "latin-1 a-circumflex re-encoded to UTF-8 (repro: Midnight Flaneur Dress)",
+			input:    "MidnightFl\xE2neurDressILL.safetensors",
+			expected: "MidnightFlâneurDressILL.safetensors",
+		},
+		{
+			name:     "valid UTF-8 filename unchanged",
+			input:    "Modèle v2.0.safetensors",
+			expected: "Modèle v2.0.safetensors",
+		},
+		{
+			name:     "forward slash path traversal removed",
+			input:    "../../../etc/passwd",
+			expected: "etcpasswd",
+		},
+		{
+			name:     "backslash path traversal removed",
+			input:    `..\..\evil.bin`,
+			expected: "evil.bin",
+		},
+		{
+			name:     "null byte removed",
+			input:    "a\x00b.bin",
+			expected: "ab.bin",
+		},
+		{
+			name:     "control character removed",
+			input:    "a\x01b",
+			expected: "ab",
+		},
+		{
+			name:     "DEL character removed",
+			input:    "a\x7fb",
+			expected: "ab",
+		},
+		{
+			name:     "latin-1 C1 control byte re-encoded then removed",
+			input:    "a\x85b",
+			expected: "ab",
+		},
+		{
+			name:     "mixed encodings re-encoded wholesale (documented limitation)",
+			input:    "caf\xC3\xA9\xE2",
+			expected: "cafÃ©â",
+		},
+		{
+			name:     "only dots sanitizes to empty",
+			input:    "...",
+			expected: "",
+		},
+		{
+			name:     "only slash sanitizes to empty",
+			input:    "/",
+			expected: "",
+		},
+		{
+			name:     "leading and trailing whitespace trimmed",
+			input:    "  model.bin  ",
+			expected: "model.bin",
+		},
+		{
+			name:     "leading and trailing tabs trimmed",
+			input:    "\tmodel.bin\t",
+			expected: "model.bin",
+		},
+		{
+			name:     "leading dot trimmed",
+			input:    ".hidden",
+			expected: "hidden",
+		},
+		{
+			name:     "trailing dot trimmed",
+			input:    "name.",
+			expected: "name",
+		},
+		{
+			name:     "empty string unchanged",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SanitizeFilename(tt.input)
+			if got != tt.expected {
+				t.Errorf("SanitizeFilename(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
