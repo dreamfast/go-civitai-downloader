@@ -491,11 +491,11 @@ Some models require users to be logged in (creator-restricted downloads). For th
 
 1. Log into Civitai in your browser
 2. Open Developer Tools (F12) → Application → Cookies
-3. Copy the value of `__Secure-civitai-token`
+3. Copy the value of `__Secure-civ-token`
 4. Pass it in the `Cookie` header:
 
 ```
-Cookie: __Secure-civitai-token=YOUR_SESSION_COOKIE_VALUE
+Cookie: __Secure-civ-token=YOUR_SESSION_COOKIE_VALUE
 ```
 
 **Important**: Session cookies must be preserved through redirects. Configure your HTTP client to forward cookies on redirect.

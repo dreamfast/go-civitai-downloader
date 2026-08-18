@@ -125,17 +125,17 @@ For these models, you need to provide your browser session cookie in addition to
    - Log into Civitai in your browser
    - Open Developer Tools (F12)
    - Go to **Application** → **Cookies** → `civitai.com`
-   - Find the cookie named `__Secure-civitai-token`
+   - Find the cookie named `__Secure-civ-token`
    - Copy its value
 
 2. **Use via CLI flag:**
    ```bash
-   ./civitai-downloader download --session-cookie "__Secure-civitai-token=eyJhbGc..." --model-types LORA
+   ./civitai-downloader download --session-cookie "__Secure-civ-token=eyJhbGc..." --model-types LORA
    ```
 
 3. **Or add to config.toml:**
    ```toml
-   SessionCookie = "__Secure-civitai-token=eyJhbGciOiJkaXIi..."
+   SessionCookie = "__Secure-civ-token=eyJhbGciOiJkaXIi..."
    ```
 
 **Note:** Session cookies expire, so you may need to update this periodically.
