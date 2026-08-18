@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"go-civitai-download/internal/models"
 
@@ -566,5 +567,125 @@ func BenchmarkDownloadFile(b *testing.B) {
 
 		// Clean up for next iteration
 		os.Remove(targetPath)
+	}
+}
+
+// responseWithContentDisposition builds a synthetic *http.Response with the
+// given Content-Disposition header value (or no header when empty). Using a
+// synthetic response (rather than an httptest server) lets tests inject raw
+// non-UTF-8 bytes into the header reliably, without a wire round-trip.
+func responseWithContentDisposition(contentDisposition string) *http.Response {
+	header := http.Header{}
+	if contentDisposition != "" {
+		header.Set("Content-Disposition", contentDisposition)
+	}
+	return &http.Response{Header: header}
+}
+
+// TestExtractFilenameFromResponse tests filename extraction and sanitization
+// from the Content-Disposition header, including the Latin-1 encoding repair
+// (the root cause of the corrupted-filename bug) and path-traversal safety.
+func TestExtractFilenameFromResponse(t *testing.T) {
+	// Raw Latin-1 byte 0xE2 (a-circumflex 'â') — invalid UTF-8 on its own.
+	latin1Byte := string([]byte{0xE2})
+
+	tests := []struct {
+		name     string
+		header   string // Content-Disposition value; "" means no header
+		expected string
+	}{
+		{
+			name:     "latin-1 encoded filename re-encoded to UTF-8 (repro)",
+			header:   "attachment; filename=\"MidnightFl" + latin1Byte + "neurDressILL.safetensors\"",
+			expected: "MidnightFlâneurDressILL.safetensors",
+		},
+		{
+			name:     "valid UTF-8 filename unchanged",
+			header:   "attachment; filename=\"normal-model.safetensors\"",
+			expected: "normal-model.safetensors",
+		},
+		{
+			name:     "no Content-Disposition header",
+			header:   "",
+			expected: "",
+		},
+		{
+			name:     "path traversal filename sanitized",
+			header:   "attachment; filename=\"../../etc/passwd\"",
+			expected: "etcpasswd",
+		},
+		{
+			name:     "RFC 5987 filename* parameter decoded by mime.ParseMediaType",
+			header:   "attachment; filename*=UTF-8''MidnightFl%C3%A2neurDressILL.safetensors",
+			expected: "MidnightFlâneurDressILL.safetensors",
+		},
+		{
+			name:     "filename sanitizes to empty (fallback to constructed name)",
+			header:   "attachment; filename=\"...\"",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractFilenameFromResponse(responseWithContentDisposition(tt.header))
+			if got != tt.expected {
+				t.Errorf("extractFilenameFromResponse() = %q, want %q", got, tt.expected)
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("extractFilenameFromResponse() = %q is not valid UTF-8", got)
+			}
+		})
+	}
+}
+
+// TestDownloadFile_Latin1ContentDisposition is an end-to-end regression test
+// for the corrupted-filename bug: a server sending a raw Latin-1 byte (0xE2)
+// in the Content-Disposition filename must result in a valid UTF-8 filename
+// on disk (with 'â'), not a corrupted one.
+// Note: the test content is plain text, which MIME detection classifies as
+// "text/plain" — a type not present in the extension map — so the original
+// .safetensors extension is preserved by detectMimeAndRename.
+func TestDownloadFile_Latin1ContentDisposition(t *testing.T) {
+	testData := []byte("latin1 filename test content")
+	hash := blake3.Sum256(testData)
+	hashHex := hex.EncodeToString(hash[:])
+
+	// Build a filename containing a raw Latin-1 byte 0xE2 (invalid UTF-8).
+	latin1Filename := "MidnightFl" + string([]byte{0xE2}) + "neurDressILL.safetensors"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+latin1Filename+"\"")
+		w.Write(testData)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	targetPath := filepath.Join(tempDir, "12345_constructed-name.safetensors")
+
+	downloader := NewDownloader(&http.Client{Timeout: 30 * time.Second}, "", "")
+	hashes := models.Hashes{
+		BLAKE3: hashHex,
+	}
+
+	finalPath, err := downloader.DownloadFile(targetPath, server.URL, hashes, 12345)
+	if err != nil {
+		t.Fatalf("DownloadFile failed: %v", err)
+	}
+
+	baseName := filepath.Base(finalPath)
+	if !utf8.ValidString(baseName) {
+		t.Errorf("Final filename %q is not valid UTF-8", baseName)
+	}
+
+	expected := "12345_MidnightFlâneurDressILL.safetensors"
+	if baseName != expected {
+		t.Errorf("Final filename = %q, want %q", baseName, expected)
+	}
+
+	// Verify the file exists on disk at the expected (repaired) path.
+	if _, err := os.Stat(filepath.Join(tempDir, expected)); os.IsNotExist(err) {
+		t.Errorf("File does not exist at expected path: %s", filepath.Join(tempDir, expected))
 	}
 }
