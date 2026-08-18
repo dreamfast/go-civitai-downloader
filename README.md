@@ -576,6 +576,6 @@ You can specify multiple trackers using the `--announce` flag repeatedly. This i
 *   [github.com/BurntSushi/toml](https://github.com/BurntSushi/toml): TOML configuration parsing.
 *   [github.com/sirupsen/logrus](https://github.com/sirupsen/logrus): Structured logging.
 *   [github.com/gosuri/uilive](https://github.com/gosuri/uilive): Terminal live writer for progress.
-*   [github.com/mattn/go-sqlite3](https://github.com/mattn/go-sqlite3): SQLite database driver.
+*   [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite): Pure-Go SQLite database driver (no CGO required).
 *   [github.com/zeebo/blake3](https://github.com/zeebo/blake3): BLAKE3 hashing for file verification.
 *   [github.com/anacrolix/torrent](https://github.com/anacrolix/torrent): BitTorrent library (metainfo, bencode).
