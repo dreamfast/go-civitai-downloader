@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"go-civitai-download/internal/models" // Import the models package
 
@@ -309,4 +311,67 @@ func SanitizePath(path string) string {
 	}
 
 	return safePath
+}
+
+// SanitizeFilename cleans a filename (typically taken from a server-provided
+// Content-Disposition header) so it can be safely used on the local filesystem.
+//
+// It performs two kinds of cleanup:
+//
+//  1. Encoding repair: HTTP header values are raw byte sequences. Some servers
+//     (e.g. the Civitai/S3 download endpoint) encode non-ASCII characters
+//     using Latin-1 (ISO-8859-1) instead of UTF-8, producing invalid UTF-8
+//     sequences (e.g. a single 0xE2 byte for 'â'). If the input is not valid
+//     UTF-8, it is re-encoded from Latin-1 to UTF-8 (each byte is treated as a
+//     Latin-1 code point).
+//
+//     Limitation: a string that is only partially valid UTF-8 (mixed
+//     encodings) is re-encoded wholesale; this is extremely rare for a single
+//     header value.
+//
+//  2. Unsafe character removal: path separators ('/', '\') and all control
+//     characters (C0, C1, DEL, including the null byte) are removed so the
+//     value cannot escape the target directory (path traversal) or contain
+//     invalid filename bytes. Windows reserved device names (CON, NUL, ...),
+//     ':', and other Windows-illegal characters are not handled; the Civitai
+//     API does not produce them.
+//
+// Leading/trailing whitespace and dots are trimmed to avoid hidden files and
+// parent-directory references. The result may be an empty string; callers
+// should treat that as "no usable filename" and fall back to a constructed
+// name.
+func SanitizeFilename(name string) string {
+	// 1. Repair invalid UTF-8 (assumed Latin-1) by re-encoding each byte as a
+	// code point: e.g. 0xE2 -> U+00E2 ('â') -> UTF-8 0xC3 0xA2.
+	if !utf8.ValidString(name) {
+		var b strings.Builder
+		for i := 0; i < len(name); i++ {
+			b.WriteRune(rune(name[i]))
+		}
+		reencoded := b.String()
+		log.Debugf("Filename %q contained invalid UTF-8 (likely Latin-1 encoded); re-encoded to %q", name, reencoded)
+		name = reencoded
+	}
+
+	// 2. Remove filesystem-unsafe characters (also prevents path traversal).
+	// unicode.IsControl covers C0 controls, DEL, and the C1 range (which
+	// Latin-1 re-encoding can produce from raw 0x80-0x9F bytes).
+	var cleaned strings.Builder
+	removedCount := 0
+	for _, r := range name {
+		if r == '/' || r == '\\' || unicode.IsControl(r) {
+			removedCount++
+			continue
+		}
+		cleaned.WriteRune(r)
+	}
+	if removedCount > 0 {
+		log.Warnf("Filename %q contained %d unsafe character(s) (path separators or control chars); sanitized to %q", name, removedCount, cleaned.String())
+	}
+	name = cleaned.String()
+
+	// 3. Trim leading/trailing whitespace and dots.
+	name = strings.Trim(name, " \t.")
+
+	return name
 }
