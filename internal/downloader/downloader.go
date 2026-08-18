@@ -207,8 +207,19 @@ func extractFilenameFromResponse(resp *http.Response) string {
 
 	_, params, err := mime.ParseMediaType(contentDisposition)
 	if err == nil && params["filename"] != "" {
-		log.Infof("Received filename from Content-Disposition: %s", params["filename"])
-		return params["filename"]
+		// Sanitize the server-provided filename: repairs Latin-1-encoded
+		// non-ASCII characters (invalid UTF-8) and strips path separators and
+		// control characters (prevents path traversal). Note: mime.ParseMediaType
+		// already decodes RFC 5987 `filename*` parameters into params["filename"].
+		// If sanitization yields an empty value, return "" so the caller falls
+		// back to the constructed filename.
+		sanitized := helpers.SanitizeFilename(params["filename"])
+		if sanitized == "" {
+			log.Warnf("Content-Disposition filename %q sanitized to an empty string; using constructed filename.", params["filename"])
+			return ""
+		}
+		log.Infof("Received filename from Content-Disposition: %s", sanitized)
+		return sanitized
 	}
 
 	if strings.HasPrefix(contentDisposition, "inline") && params["filename"] == "" {
